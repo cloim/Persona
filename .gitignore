@@ -21,6 +21,7 @@ __pycache__/
 .mypy_cache/
 dist/
 build/
+output/
 *.egg-info/
 .turbo/
 .cache/
