@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-작업실: http://localhost:4317
+작업실: http://localhost:8190
 
 관리 서비스에 등록된 실행 항목을 사용할 때는 해당 관리 화면에서 시작과 중지를 관리합니다. 같은 포트로 개발 서버를 실행하려면 기존 서비스를 먼저 중지해 주세요.
 
@@ -26,7 +26,7 @@ npm start
 
 ## Tailscale 원격 접속
 
-프로젝트 루트의 `.env`에 `PERSONA_ALLOWED_ORIGINS=https://workstation.example.com:8462`처럼 실제 Tailscale HTTPS origin을 지정한 뒤 서버를 재시작합니다. `.env`는 Git에서 제외됩니다. `tailscale serve --bg --https=8462 http://127.0.0.1:4317`로 전용 HTTPS 포트를 연결하면 Tailscale이 켜진 같은 네트워크의 기기에서 접근할 수 있습니다. 기존 Serve 포트와 겹치지 않는 번호를 사용하세요.
+프로젝트 루트의 `.env`에 `PERSONA_ALLOWED_ORIGINS=https://workstation.example.com:8190`처럼 실제 Tailscale HTTPS origin을 지정한 뒤 서버를 재시작합니다. `.env`는 Git에서 제외됩니다. `tailscale serve --bg --https=8190 http://127.0.0.1:8190`로 전용 HTTPS 포트를 연결하면 Tailscale이 켜진 같은 네트워크의 기기에서 접근할 수 있습니다. 기존 Serve 포트와 겹치지 않는 번호를 사용하세요.
 
 브라우저 데이터는 기기와 주소별로 저장되므로 기존 프로젝트를 옮기려면 프로젝트 백업과 가져오기를 사용합니다. 원격 기기에서도 ComfyUI와 Codex는 작업실 서버 PC의 연결을 사용합니다.
 
@@ -92,7 +92,7 @@ modal run scripts/modal_train.py --dataset-dir ./dataset_abc --trigger abc --mod
 
 ## Google 로그인과 Drive 프로젝트 보관
 
-서버의 `.env`에 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 설정합니다. Google Auth Platform에서 웹 애플리케이션 OAuth 클라이언트를 만들고 실제 Tailscale HTTPS 주소와 `http://localhost:4317`을 승인된 JavaScript 원본으로, 각 주소 뒤에 `/api/google/callback`을 붙인 주소를 승인된 리디렉션 URI로 등록합니다. Drive API를 사용 설정하고 테스트 모드에서는 사용할 Google 계정을 테스트 사용자로 추가합니다. 로그인 범위는 `openid`, `email`, `profile`, `drive.file`입니다. 전체 Drive 접근 권한을 요청하지 않습니다.
+서버의 `.env`에 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 설정합니다. Google Auth Platform에서 웹 애플리케이션 OAuth 클라이언트를 만들고 실제 Tailscale HTTPS 주소와 `http://localhost:8190`을 승인된 JavaScript 원본으로, 각 주소 뒤에 `/api/google/callback`을 붙인 주소를 승인된 리디렉션 URI로 등록합니다. Drive API를 사용 설정하고 테스트 모드에서는 사용할 Google 계정을 테스트 사용자로 추가합니다. 로그인 범위는 `openid`, `email`, `profile`, `drive.file`입니다. 전체 Drive 접근 권한을 요청하지 않습니다.
 
 앱의 **Google Drive 보관함**에서 로그인한 후 검토 완료 프로젝트를 저장합니다. 내 Drive의 `Persona Studio` 아래 새로운 폴더에 `dataset.zip`을 안전하게 백업합니다. 업로드는 8MB 조각으로 전송하며 중단해도 로컬 프로젝트는 유지합니다.
 

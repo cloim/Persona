@@ -12,7 +12,7 @@ import { checkModalCli, getModalTrainingJob, cancelModalTraining, startModalTrai
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
 const app = express(); const token = randomBytes(32).toString('hex');
-const port = Number(process.env.PORT || 4317); const production = process.argv.includes('--production');
+const port = Number(process.env.PORT || 8190); const production = process.argv.includes('--production');
 const access = allowedAccess(port, process.env.PERSONA_ALLOWED_ORIGINS || process.env.PERSONAS_ALLOWED_ORIGINS);
 const jobs = new Map();
 app.disable('x-powered-by');
@@ -86,6 +86,6 @@ app.get('/api/train/output/:filename', (req, res) => {
 });
 app.use('/api', (req, res) => res.status(404).json({ error: '지원하는 API 경로를 확인해 주세요' }));
 if (production) { app.use(express.static(path.join(root, 'dist'))); app.get('/{*path}', (req, res) => res.sendFile(path.join(root, 'dist/index.html'))); }
-else { const { createServer: createViteServer } = await import('vite'); const vite = await createViteServer({ root, server: { middlewareMode: true }, appType: 'spa' }); app.use(vite.middlewares); }
+else { const { createServer: createViteServer } = await import('vite'); const vite = await createViteServer({ root, server: { middlewareMode: true, allowedHosts: [...access.origins].map(origin => new URL(origin).hostname) }, appType: 'spa' }); app.use(vite.middlewares); }
 app.use((error, req, res, next) => { res.status(400).json({ error: '요청 형식과 파일 크기를 확인해 주세요' }); });
 app.listen(port, process.env.HOST || '0.0.0.0', () => console.log(`Persona 작업실 http://${process.env.HOST || '0.0.0.0'}:${port} (${production ? 'production' : 'development'})`));
