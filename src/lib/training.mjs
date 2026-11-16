@@ -70,3 +70,8 @@ export function trainingConfig(project) {
     meta: { name: '[name]', version: '1.0' },
   };
 }
+
+export function trainingValid(project) {
+  const t = project.training || {};
+  return t.steps >= 100 && t.steps <= 10000 && [4, 8].includes(Number(t.rank)) && Number(t.learningRate) > 0 && Number(t.learningRate) <= 0.01 && typeof t.checkpoint === 'string' && t.checkpoint.trim().length > 2;
+}

@@ -49,8 +49,8 @@ export function googleRouter({ origins, clientId, clientSecret, sessionSecret = 
   });
   router.get('/callback',async(req,res)=>{
     res.set('Referrer-Policy','no-referrer');const pending=req.session.pendingGoogle;delete req.session.pendingGoogle;
-    if(!pending||Date.now()-pending.createdAt>10*60_000||!same(pending.state,req.query.state)||pending.redirect!==ownOrigin(req)+'/api/google/callback')return res.redirect('/cloud?google=state');
-    if(req.query.error||typeof req.query.code!=='string')return res.redirect('/cloud?google=cancelled');
+    if(!pending||Date.now()-pending.createdAt>10*60_000||!same(pending.state,req.query.state)||pending.redirect!==ownOrigin(req)+'/api/google/callback')return res.redirect('/settings?google=state');
+    if(req.query.error||typeof req.query.code!=='string')return res.redirect('/settings?google=cancelled');
     try {
       const client=oauth(pending.redirect);const {tokens}=await client.getToken({code:req.query.code,codeVerifier:pending.verifier});
       const ticket=await client.verifyIdToken({idToken:tokens.id_token,audience:clientId});const payload=ticket.getPayload();
@@ -58,8 +58,8 @@ export function googleRouter({ origins, clientId, clientSecret, sessionSecret = 
       if(!(tokens.scope||'').split(' ').includes('https://www.googleapis.com/auth/drive.file'))throw Error('Drive 파일 권한을 확인해 주세요');
       await new Promise((resolve,reject)=>req.session.regenerate(error=>error?reject(error):resolve()));
       req.session.google={user:{id:payload.sub,email:payload.email,name:payload.name||payload.email,picture:payload.picture||''},tokens};
-      req.session.save(error=>res.redirect('/cloud?google='+(error?'error':'connected')));
-    }catch{res.redirect('/cloud?google=error');}
+      req.session.save(error=>res.redirect('/settings?google='+(error?'error':'connected')));
+    }catch{res.redirect('/settings?google=error');}
   });
   router.post('/logout',requireUser,async(req,res)=>{req.session.destroy(()=>{res.clearCookie('persona.google',{path:'/',sameSite:'lax',secure:req.secure});res.clearCookie('personas.google',{path:'/',sameSite:'lax',secure:req.secure});res.json({ok:true});});});
   router.get('/packages',requireUser,async(req,res)=>{

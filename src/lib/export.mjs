@@ -81,3 +81,7 @@ export async function importTrainingPackage(bytes,readImage,{signal,onProgress=(
   checkAbort();
   return{project:validateBackup({format:'persona-project-v1',project:p}),legacy:m.version===1};
 }
+
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
+}

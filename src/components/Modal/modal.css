@@ -54,7 +54,7 @@
 }
 
 .modal-header.is-draggable:focus-visible {
-  outline: 2px solid #7580ff;
+  outline: 2px solid var(--green, #3f7255);
   outline-offset: -2px;
 }
 
@@ -127,10 +127,11 @@ body.modal-gesture-active {
 .modal-resize-se { right: -3px; bottom: -3px; width: 15px; height: 15px; cursor: nwse-resize; }
 .modal-resize-sw { bottom: -3px; left: -3px; width: 15px; height: 15px; cursor: nesw-resize; }
 
-/* 좁은 화면에서는 드래그와 리사이즈가 꺼지고, 모달이 화면을 거의 채운다. */
+/* 좁은 화면에서는 드래그와 리사이즈가 꺼지고, 모달이 아래에서 올라오는 바텀시트로 바뀐다. */
 @media (max-width: 767px) {
   .modal-overlay {
-    padding: 12px;
+    align-items: flex-end;
+    padding: 0;
   }
 
   /* 좁은 화면에서는 저장된 위치와 크기가 남아 있어도 전체 폭 배치를 유지한다. 훅이 넣는
@@ -139,6 +140,27 @@ body.modal-gesture-active {
     width: 100% !important;
     max-width: 100%;
     height: auto !important;
+    max-height: 88dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-radius: 16px 16px 0 0;
     transform: none !important;
+  }
+
+  /* 헤더 위 중앙 핸들 바. 장식이므로 가상 요소로만 그린다. */
+  .modal-header {
+    position: relative;
+    padding-top: 24px;
+  }
+
+  .modal-header::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 40px;
+    height: 4px;
+    margin-left: -20px;
+    border-radius: 999px;
+    background: #d3d8ce;
   }
 }

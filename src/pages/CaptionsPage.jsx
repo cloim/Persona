@@ -1,23 +1,109 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowRight, CheckCheck, Download, FileText, RefreshCw, Search, Tags, TriangleAlert, Sparkles } from 'lucide-react';
-import JSZip from 'jszip';
-import { captionFor, readiness } from '../lib/dataset.mjs';
-import { Button, Empty, Modal, SelectControl } from '../components/ui';
-import { download, safeName } from '../lib/export.mjs';
+import React, { useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowRight, CheckCheck, FileText, MoreHorizontal, RefreshCw, Settings2, Sparkles } from 'lucide-react';
+import { captionFor } from '../lib/dataset.mjs';
+import { Button, Empty, Modal, Popover } from '../components/ui';
+import CaptionSettings from '../components/CaptionSettings';
 
-export default function CaptionsPage({ project, updateProject, updateSlot, openShot, notify,captionTask,runCaptions,cancelCaptions,settings }) {
-  const [filter, setFilter] = useState('all'); const [query, setQuery] = useState(''); const [confirm, setConfirm] = useState(false); const [busy, setBusy] = useState(false);
-  const progress = readiness(project); const images = project.slots.filter(s => s.image);
-  const filtered = images.filter(s => (filter === 'all' || (filter === 'review' ? !s.reviewed : s.reviewed)) && `${s.title} ${s.caption}`.toLowerCase().includes(query.toLowerCase()));
-  async function exportCaptions() {
-    setBusy(true); try { const zip = new JSZip(); images.forEach(s => { zip.file(`${safeName(project.trigger)}_${String(project.slots.indexOf(s) + 1).padStart(3,'0')}.txt`, s.caption.trim() + '\n'); }); download(await zip.generateAsync({ type: 'blob' }), `${safeName(project.trigger)}-captions.zip`); notify('등록된 이미지의 캡션 TXT를 내보냈어요'); } catch { notify('캡션 내보내기를 다시 시도해 주세요', true); } finally { setBusy(false); }
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
+
+function sourceLabel(slot) {
+  if (slot.reviewed) return '확인 완료';
+  if (slot.captionSource?.startsWith('ai:')) return 'AI 작성';
+  if (slot.captionSource === 'manual') return '직접 작성';
+  return '가이드 초안';
+}
+
+export default function CaptionsPage({ project, settings, updateSettings, updateProject, updateSlot, openShot, notify, captionTask, runCaptions, cancelCaptions }) {
+  const navigate = useNavigate();
+  const [filter, setFilter] = useState('review');
+  const [confirm, setConfirm] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const menuButton = useRef(null);
+  const areas = useRef({});
+  const images = project.slots.filter(s => s.image);
+  const pending = images.filter(s => !s.reviewed);
+  const filtered = images.filter(s => filter === 'all' || (filter === 'review' ? !s.reviewed : s.reviewed));
+  const visiblePending = filtered.filter(s => !s.reviewed);
+  const closeMenu = () => setMenu(false);
+  const filters = [
+    { key: 'review', label: '확인 필요', count: pending.length },
+    { key: 'done', label: '확인 완료', count: images.length - pending.length },
+    { key: 'all', label: '전체', count: images.length },
+  ];
+
+  function approveVisible() {
+    const ids = new Set(filtered.filter(s => s.caption.trim() && !s.reviewed).map(s => s.id));
+    if (!ids.size) return notify('확인 처리할 캡션이 없어요');
+    updateProject(prev => ({ slots: prev.slots.map(s => ids.has(s.id) ? { ...s, reviewed: true } : s) }));
+    notify(`${ids.size}장의 캡션을 확인 처리했어요`);
   }
-  return <div className="standard-page"><div className="section-intro"><div className="intro-icon"><Tags size={24}/></div><div><h2>이미지를 설명하는 정확한 단어</h2><p>자동으로 준비한 초안을 실제 이미지에 맞게 다듬어 주세요</p></div><Button icon={Download} busy={busy} disabled={!images.length} onClick={exportCaptions}>캡션 TXT 내보내기</Button></div>
-    <div className="caption-banner"><div><strong>{progress.reviewed}<span> / {progress.total}</span></strong><span>캡션 확인 완료</span></div><p>첫 단어는 <code>{project.trigger}</code><br/>변하는 구도, 의상과 배경을 중심으로 작성해요</p><Link className="text-link" to="/training">학습 준비<ArrowRight size={16}/></Link></div>
-    <div className="content-toolbar"><label className="search-box"><Search size={16}/><input aria-label="캡션 검색" placeholder="구도 또는 캡션 검색" value={query} onChange={e => setQuery(e.target.value)}/></label><SelectControl aria-label="캡션 상태" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">모든 캡션</option><option value="review">확인 필요</option><option value="done">확인 완료</option></SelectControl><Button icon={RefreshCw} disabled={!images.length} onClick={() => setConfirm(true)}>초안 일괄 재생성</Button></div>
-    <section className="surface ai-caption-panel"><div><h3><Sparkles size={18}/>실제 이미지를 보고 AI로 작성</h3><p>{settings.captionProvider==='api'?'비전 API':'Codex OAuth'}로 구도, 표정, 의상과 배경을 설명해요. 검토 완료한 캡션은 유지합니다.</p><Link className="text-link" to="/connections">캡션 AI 설정<ArrowRight size={14}/></Link></div><Button variant="primary" icon={Sparkles} busy={!!captionTask} disabled={!images.some(s=>!s.reviewed)} onClick={()=>runCaptions(filtered.map(s=>s.id))}>미확인 캡션 AI 작성</Button>{captionTask&&<div className="caption-job" role="status"><span>{captionTask.done} / {captionTask.total}장 작성 중</span><Button variant="ghost" onClick={cancelCaptions}>중단</Button></div>}</section><div className="callout"><TriangleAlert size={17}/><span>촬영 가이드 초안과 AI 이미지 분석 캡션을 구분해 표시해요. AI 작성 결과도 실제 이미지와 일치하는지 검토해 주세요.</span></div>
-    <div className="caption-list">{filtered.map(slot => <article className="caption-row" key={slot.id}><button className="caption-thumbnail" onClick={() => openShot(slot.id)} aria-label={`${slot.title} 이미지 상세`}><img src={slot.image.data} alt={slot.title} loading="lazy"/></button><div className="caption-edit"><div><strong>{String(project.slots.indexOf(slot)+1).padStart(2,'0')} · {slot.title}</strong><span className={slot.reviewed ? 'state-badge green' : 'state-badge'}>{slot.reviewed ? '확인 완료' : slot.captionSource?.startsWith('ai:') ? 'AI 작성' : slot.captionSource==='manual'?'직접 작성':'가이드 초안'}</span></div><textarea aria-label={`${slot.title} 캡션`} rows={3} value={slot.caption} onChange={e => updateSlot(slot.id, { caption: e.target.value, reviewed: false })}/><div className="caption-row-actions"><Button variant="ghost" icon={Sparkles} busy={captionTask?.slotId===slot.id} disabled={!!captionTask} onClick={()=>slot.reviewed?openShot(slot.id):runCaptions([slot.id])}>{slot.reviewed?"상세와 재작성":"AI 캡션 작성"}</Button></div><label className="inline-checkbox"><input type="checkbox" disabled={!slot.caption.trim()} checked={slot.reviewed} onChange={e => updateSlot(slot.id, { reviewed: e.target.checked })}/>이미지와 캡션이 일치해요</label></div></article>)}{!filtered.length && <Empty icon={FileText} title={images.length ? '해당하는 캡션이 없어요' : '이미지를 등록하면 캡션이 준비돼요'}>{images.length ? '필터와 검색어를 바꿔 보세요' : <Link className="text-link" to="/dataset">이미지셋으로 이동<ArrowRight size={15}/></Link>}</Empty>}</div>
-    <Modal isOpen={confirm} onClose={() => setConfirm(false)} title="캡션 초안 다시 만들기" footer={<><Button onClick={() => setConfirm(false)}>현재 캡션 유지</Button><Button variant="primary" onClick={() => { updateProject({ slots: project.slots.map(s => s.image ? { ...s, caption: captionFor(project,s), captionSource:'guide', reviewed: false } : s) }); setConfirm(false); notify('등록 이미지의 캡션 초안을 다시 만들었어요'); }}>초안 다시 만들기</Button></>}><p>등록된 이미지 {images.length}장의 캡션을 현재 촬영 구도와 트리거로 다시 만듭니다. 직접 수정한 캡션도 교체되며 확인 상태는 초안으로 바뀌어요.</p></Modal>
+
+  function approveAndNext(slot, event) {
+    if (!(event.ctrlKey || event.metaKey) || event.key !== 'Enter') return;
+    event.preventDefault();
+    if (!slot.caption.trim()) return;
+    updateSlot(slot.id, { reviewed: true });
+    const at = filtered.findIndex(s => s.id === slot.id);
+    const next = filtered.slice(at + 1).find(s => !s.reviewed);
+    if (next) areas.current[next.id]?.focus();
+  }
+
+  return <div className="page captions-page">
+    <div className="toolbar" role="toolbar" aria-label="캡션 도구">
+      <div className="segmented" role="group" aria-label="캡션 상태">
+        {filters.map(f => <button type="button" key={f.key} className={filter === f.key ? 'active' : ''} aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>{f.label} {f.count}</button>)}
+      </div>
+      <div className="toolbar-end">
+        {captionTask
+          ? <div className="caption-job" role="status"><span>{captionTask.done}/{captionTask.total} 작성 중</span><Button onClick={cancelCaptions}>중단</Button></div>
+          : <Button variant="primary" icon={Sparkles} disabled={!visiblePending.length} onClick={() => runCaptions(visiblePending.map(s => s.id))}>AI로 작성</Button>}
+        <button ref={menuButton} type="button" className="icon-button bordered" aria-label="더보기" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(open => !open)}><MoreHorizontal size={18}/></button>
+        <Popover anchorRef={menuButton} open={menu} onClose={closeMenu} label="캡션 더보기">
+          <button type="button" role="menuitem" className="menu-item" disabled={!filtered.length} onClick={() => { closeMenu(); approveVisible(); }}><CheckCheck size={16}/>보이는 항목 모두 확인</button>
+          <button type="button" role="menuitem" className="menu-item" disabled={!images.length} onClick={() => { closeMenu(); setConfirm(true); }}><RefreshCw size={16}/>초안 다시 만들기</button>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => { closeMenu(); setShowSettings(true); }}><Settings2 size={16}/>캡션 AI 설정</button>
+        </Popover>
+      </div>
+    </div>
+    <p className="key-hint">{isMac ? '⌘+Enter' : 'Ctrl+Enter'}로 확인하고 다음 캡션으로 이동</p>
+
+    <div className="caption-list">
+      {filtered.map(slot => <article className="caption-row" key={slot.id}>
+        <button type="button" className="caption-thumb" onClick={() => openShot(slot.id, 'caption')} aria-label={`${slot.title} 이미지 상세`}>
+          <img src={slot.image.data} alt="" loading="lazy"/>
+        </button>
+        <div className="caption-body">
+          <div className="caption-head">
+            <strong>{String(project.slots.indexOf(slot) + 1).padStart(2, '0')} · {slot.title}</strong>
+            <span className={`badge${slot.reviewed ? ' green' : ''}`}>{sourceLabel(slot)}</span>
+          </div>
+          <textarea ref={el => { if (el) areas.current[slot.id] = el; else delete areas.current[slot.id]; }} aria-label={`${slot.title} 캡션`} rows={3} value={slot.caption} onChange={e => updateSlot(slot.id, { caption: e.target.value, reviewed: false })} onKeyDown={e => approveAndNext(slot, e)}/>
+          <div className="caption-foot">
+            <label className="check-row compact">
+              <input type="checkbox" disabled={!slot.caption.trim()} checked={slot.reviewed} onChange={e => updateSlot(slot.id, { reviewed: e.target.checked })}/>
+              <span>이미지와 일치</span>
+            </label>
+            <button type="button" className="icon-button" aria-label="AI로 다시 작성" data-tooltip="AI 재작성" disabled={!!captionTask} onClick={() => runCaptions([slot.id], { includeReviewed: true })}><Sparkles size={18}/></button>
+          </div>
+        </div>
+      </article>)}
+      {!filtered.length && (!images.length
+        ? <Empty icon={FileText} title="이미지셋에서 이미지를 등록해 주세요"><Link className="button primary" to="/dataset">이미지셋으로<ArrowRight size={16}/></Link></Empty>
+        : filter === 'review'
+          ? <Empty icon={CheckCheck} title="확인할 캡션이 없어요"><Button variant="primary" onClick={() => navigate('/training')}>학습으로<ArrowRight size={16}/></Button></Empty>
+          : <Empty icon={FileText} title="해당하는 캡션이 없어요"><Button onClick={() => setFilter('all')}>전체 보기</Button></Empty>)}
+    </div>
+
+    <Modal isOpen={confirm} onClose={() => setConfirm(false)} title="캡션 초안 다시 만들기" footer={<>
+      <Button onClick={() => setConfirm(false)}>현재 캡션 유지</Button>
+      <Button variant="primary" onClick={() => { updateProject({ slots: project.slots.map(s => s.image ? { ...s, caption: captionFor(project, s), captionSource: 'guide', reviewed: false } : s) }); setConfirm(false); notify('등록 이미지의 캡션 초안을 다시 만들었어요'); }}>초안 다시 만들기</Button>
+    </>}>
+      <p>등록된 이미지 {images.length}장의 캡션을 현재 촬영 구도와 트리거로 다시 만들어요 · 직접 수정한 캡션도 교체되며 확인 상태는 초안으로 바뀌어요</p>
+    </Modal>
+    <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} title="캡션 AI 설정" size="lg" footer={<Button variant="primary" onClick={() => setShowSettings(false)}>완료</Button>}>
+      <CaptionSettings settings={settings} updateSettings={updateSettings}/>
+    </Modal>
   </div>;
 }
