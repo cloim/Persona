@@ -25,7 +25,7 @@ app.use('/api', (req, res, next) => {
   if (req.method !== 'GET' && req.headers['x-persona-token'] !== token && req.headers['x-personas-token'] !== token) return res.status(403).json({ code:'csrf', error: '작업실을 새로고침한 뒤 다시 시도해 주세요' });
   next();
 });
-app.use(express.json({ limit: '38mb' }));
+app.use(express.json({ limit: '100mb' }));
 app.get('/api/session', (req, res) => res.json({ token, version: '1.0.0' }));
 app.use('/api/google', googleRouter({ origins:access.origins, clientId:process.env.GOOGLE_CLIENT_ID, clientSecret:process.env.GOOGLE_CLIENT_SECRET }));
 let captionRunning=0;
@@ -67,7 +67,7 @@ app.get('/api/jobs/:id', (req, res) => {
 });
 app.post('/api/jobs/:id/cancel', (req, res) => { const job = jobs.get(req.params.id); job?.controller?.abort(); res.json({ ok: true }); });
 app.get('/api/train/info', (req, res) => { res.json(checkModalCli()); });
-app.get('/api/train/status', (req, res) => { res.json(getModalTrainingJob()); });
+app.get('/api/train/status', (req, res) => { res.json(getModalTrainingJob(req.query.trigger)); });
 app.post('/api/train/start', async (req, res) => {
   try {
     const { project, slots } = req.body;
@@ -87,5 +87,12 @@ app.get('/api/train/output/:filename', (req, res) => {
 app.use('/api', (req, res) => res.status(404).json({ error: '지원하는 API 경로를 확인해 주세요' }));
 if (production) { app.use(express.static(path.join(root, 'dist'))); app.get('/{*path}', (req, res) => res.sendFile(path.join(root, 'dist/index.html'))); }
 else { const { createServer: createViteServer } = await import('vite'); const vite = await createViteServer({ root, server: { middlewareMode: true, allowedHosts: [...access.origins].map(origin => new URL(origin).hostname) }, appType: 'spa' }); app.use(vite.middlewares); }
-app.use((error, req, res, next) => { res.status(400).json({ error: '요청 형식과 파일 크기를 확인해 주세요' }); });
+app.use((error, req, res, next) => {
+  console.error('[API 에러]', error?.message || error);
+  const status = error.status || error.statusCode || 400;
+  const message = error.type === 'entity.too.large'
+    ? '요청 파일의 총 용량이 너무 큽니다. 사진 크기를 확인해 주세요'
+    : (error.message || '요청 형식과 파일 크기를 확인해 주세요');
+  res.status(status).json({ error: message });
+});
 app.listen(port, process.env.HOST || '0.0.0.0', () => console.log(`Persona 작업실 http://${process.env.HOST || '0.0.0.0'}:${port} (${production ? 'production' : 'development'})`));

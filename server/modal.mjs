@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync, statSync, createReadStream } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, readdirSync, statSync, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -105,7 +105,46 @@ export function checkModalCli() {
   }
 }
 
-export function getModalTrainingJob() {
+function findLatestSafetensors(dir) {
+  if (!existsSync(dir)) return [];
+  const results = [];
+  function scan(currentDir) {
+    try {
+      const entries = readdirSync(currentDir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+        if (entry.isFile() && entry.name.endsWith('.safetensors')) {
+          const stat = statSync(fullPath);
+          results.push({ name: entry.name, path: fullPath, time: stat.mtimeMs, size: stat.size });
+        } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
+          scan(fullPath);
+        }
+      }
+    } catch {}
+  }
+  scan(dir);
+  return results.sort((a, b) => b.time - a.time);
+}
+
+function findSafetensorsFile(dir, targetName) {
+  if (!existsSync(dir)) return null;
+  const direct = path.join(dir, targetName);
+  if (existsSync(direct)) return direct;
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isFile() && entry.name === targetName) return fullPath;
+      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        const sub = findSafetensorsFile(fullPath, targetName);
+        if (sub) return sub;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export function getModalTrainingJob(trigger) {
   if (activeJob && (activeJob.status === 'running' || activeJob.status === 'cancelling')) {
     const { process: _proc, ...info } = activeJob;
     return info;
@@ -116,9 +155,62 @@ export function getModalTrainingJob() {
     return external;
   }
 
-  if (!activeJob) return { status: 'idle' };
-  const { process: _proc, ...info } = activeJob;
-  return info;
+  if (activeJob) {
+    if (activeJob.status === 'completed' && !activeJob.outputFile) {
+      const files = findLatestSafetensors(outputDir);
+      if (files.length > 0) {
+        const matched = files.find(f => activeJob.trigger && f.name.includes(activeJob.trigger)) || files[0];
+        activeJob.outputFile = matched.name;
+        activeJob.outputSize = matched.size;
+        activeJob.logs.push(`[시스템] 결과 파일 확인 완료: ${matched.name} (${(matched.size / 1024 / 1024).toFixed(1)} MB)`);
+      } else if (activeJob.trigger) {
+        try {
+          const loraName = `${activeJob.trigger}_krea2.safetensors`;
+          const target = path.join(outputDir, loraName);
+          const dl = spawnSync('modal', ['volume', 'get', 'persona-output', `${activeJob.trigger}_krea2/${loraName}`, target], { shell: true, timeout: 60000 });
+          if (dl.status === 0 && existsSync(target)) {
+            const stat = statSync(target);
+            activeJob.outputFile = loraName;
+            activeJob.outputSize = stat.size;
+            activeJob.logs.push(`[시스템] Modal Volume에서 결과 파일 자동 수신 완료: ${loraName} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`);
+          }
+        } catch {}
+      }
+    }
+    const { process: _proc, ...info } = activeJob;
+    return info;
+  }
+
+  // activeJob이 없을 때(새로고침/재시작): 디스크 상태 또는 최근 완료된 LoRA 파일 복구
+  try {
+    const jobStateFile = path.join(tempDir, 'last_train_job.json');
+    if (existsSync(jobStateFile)) {
+      const saved = JSON.parse(readFileSync(jobStateFile, 'utf-8'));
+      if (saved && (!trigger || saved.trigger === trigger)) {
+        return saved;
+      }
+    }
+  } catch {}
+
+  const files = findLatestSafetensors(outputDir);
+  if (files.length > 0) {
+    const matched = trigger ? files.find(f => f.name.includes(trigger)) : files[0];
+    if (matched) {
+      return {
+        status: 'completed',
+        trigger: trigger || matched.name.split('_')[0],
+        outputFile: matched.name,
+        outputSize: matched.size,
+        completedAt: matched.time,
+        modelId: 'krea2',
+        currentStep: 1000,
+        steps: 1000,
+        logs: [`[시스템] 완성된 LoRA 모델 파일이 준비되었습니다: ${matched.name}`]
+      };
+    }
+  }
+
+  return { status: 'idle' };
 }
 
 export function cancelModalTraining() {
@@ -302,19 +394,39 @@ export async function startModalTraining({ project, slots }) {
 
       // 출력 폴더에서 가장 최신의 safetensors 검색
       try {
-        const files = readdirSync(outputDir)
-          .filter(f => f.endsWith('.safetensors'))
-          .map(f => {
-            const stat = statSync(path.join(outputDir, f));
-            return { name: f, time: stat.mtimeMs, size: stat.size };
-          })
-          .sort((a, b) => b.time - a.time);
+        let files = findLatestSafetensors(outputDir);
+        if (files.length === 0 && trigger) {
+          try {
+            const loraName = `${trigger}_krea2.safetensors`;
+            const target = path.join(outputDir, loraName);
+            spawnSync('modal', ['volume', 'get', 'persona-output', `${trigger}_krea2/${loraName}`, target], { shell: true, timeout: 60000 });
+            files = findLatestSafetensors(outputDir);
+          } catch {}
+        }
 
         if (files.length > 0) {
-          job.outputFile = files[0].name;
-          job.outputSize = files[0].size;
-          job.logs.push(`[시스템] 결과 파일: ${files[0].name} (${(files[0].size / 1024 / 1024).toFixed(1)} MB)`);
+          const matched = files.find(f => trigger && f.name.includes(trigger)) || files[0];
+          job.outputFile = matched.name;
+          job.outputSize = matched.size;
+          job.logs.push(`[시스템] 결과 파일: ${matched.name} (${(matched.size / 1024 / 1024).toFixed(1)} MB)`);
         }
+
+        try {
+          const jobStateFile = path.join(tempDir, 'last_train_job.json');
+          writeFileSync(jobStateFile, JSON.stringify({
+            id: jobId,
+            status: 'completed',
+            trigger,
+            modelId,
+            steps,
+            currentStep: steps,
+            loss: job.loss,
+            outputFile: job.outputFile,
+            outputSize: job.outputSize,
+            completedAt: job.completedAt || Date.now(),
+            logs: job.logs.slice(-30),
+          }), 'utf-8');
+        } catch {}
       } catch (err) {
         job.logs.push(`[경고] 결과 파일 확인 중 오류: ${err.message}`);
       }
@@ -340,8 +452,8 @@ export async function startModalTraining({ project, slots }) {
 
 export function getOutputFileStream(filename) {
   const safeFilename = path.basename(filename);
-  const filePath = path.join(outputDir, safeFilename);
-  if (!existsSync(filePath)) {
+  const filePath = findSafetensorsFile(outputDir, safeFilename);
+  if (!filePath || !existsSync(filePath)) {
     return null;
   }
   const stat = statSync(filePath);
