@@ -4,8 +4,9 @@ import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync, statSync, cr
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const outputDir = path.join(root, 'output');
-const tempDir = path.join(root, '.cache', 'modal_train');
+const defaultLoraDir = existsSync('/comfy-data/models/loras') ? '/comfy-data/models/loras' : path.join(root, 'output');
+const outputDir = process.env.LORA_DIR || defaultLoraDir;
+const tempDir = process.env.TEMP_TRAIN_DIR || (existsSync('/data') ? '/data/modal_train' : path.join(root, '.cache', 'modal_train'));
 
 if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true });

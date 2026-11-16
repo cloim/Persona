@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { allowedAccess } from './access.mjs';
-import { compatibleGenerate, comfyGenerate, codexGenerate, testProvider } from './providers.mjs';
+import { compatibleGenerate, comfyGenerate, codexGenerate, testProvider, codexStartDeviceAuth, codexGetDeviceAuthStatus } from './providers.mjs';
 import { captionImage } from './captions.mjs';
 import { googleRouter } from './google.mjs';
 import { checkModalCli, getModalTrainingJob, cancelModalTraining, startModalTraining, getOutputFileStream } from './modal.mjs';
@@ -40,6 +40,12 @@ app.post('/api/caption',async(req,res)=>{
 });
 app.post('/api/test-connection', async (req, res) => {
   try { res.json(await testProvider(req.body)); } catch (error) { res.status(400).json({ error: error.message.startsWith('fetch') ? '서버에 연결하지 못했어요. 주소와 실행 상태를 확인해 주세요' : error.message }); }
+});
+app.post('/api/codex/device-auth', async (req, res) => {
+  try { res.json(await codexStartDeviceAuth()); } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.get('/api/codex/device-auth/status', (req, res) => {
+  res.json(codexGetDeviceAuthStatus());
 });
 app.post('/api/generate', (req, res) => {
   const { settings, prompt, reference } = req.body;
@@ -82,4 +88,4 @@ app.use('/api', (req, res) => res.status(404).json({ error: '지원하는 API �
 if (production) { app.use(express.static(path.join(root, 'dist'))); app.get('/{*path}', (req, res) => res.sendFile(path.join(root, 'dist/index.html'))); }
 else { const { createServer: createViteServer } = await import('vite'); const vite = await createViteServer({ root, server: { middlewareMode: true }, appType: 'spa' }); app.use(vite.middlewares); }
 app.use((error, req, res, next) => { res.status(400).json({ error: '요청 형식과 파일 크기를 확인해 주세요' }); });
-app.listen(port, '127.0.0.1', () => console.log(`Persona 작업실 http://localhost:${port} (${production ? 'production' : 'development'})`));
+app.listen(port, process.env.HOST || '0.0.0.0', () => console.log(`Persona 작업실 http://${process.env.HOST || '0.0.0.0'}:${port} (${production ? 'production' : 'development'})`));

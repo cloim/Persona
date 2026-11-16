@@ -90,7 +90,17 @@ export async function comfyGenerate({ settings, prompt, reference }, signal, pro
   }
 }
 export function codexCommand() {
-  const candidates = [process.env.CODEX_BIN, ...String(process.env.PATH).split(path.delimiter).map(dir => path.join(dir, 'node_modules/@openai/codex/bin/codex.js')), path.join(path.dirname(process.execPath), 'node_modules/@openai/codex/bin/codex.js')].filter(Boolean);
+  const candidates = [
+    process.env.CODEX_BIN,
+    ...String(process.env.PATH).split(path.delimiter).flatMap(dir => [
+      path.join(dir, 'codex'),
+      path.join(dir, 'codex.exe'),
+      path.join(dir, 'node_modules/@openai/codex/bin/codex.js')
+    ]),
+    path.join(path.dirname(process.execPath), 'node_modules/@openai/codex/bin/codex.js'),
+    '/usr/local/bin/codex',
+    '/usr/local/lib/node_modules/@openai/codex/bin/codex.js'
+  ].filter(Boolean);
   const bin = candidates.find(file => existsSync(file));
   if (!bin) throw new Error('Codex CLI를 설치해 주세요: npm install -g @openai/codex');
   if (bin.endsWith('.js')) {
@@ -114,9 +124,52 @@ export async function codexStatus() {
       const child = spawn(bin, [...prefix, 'login', 'status'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 });
       let output = ''; child.stdout.on('data', c => output += c); child.stderr.on('data', c => output += c);
       child.on('error', () => resolve({ ok: false, message: 'Codex CLI 실행 경로를 확인해 주세요' }));
-      child.on('close', code => resolve({ ok: code === 0, message: code === 0 ? (/ChatGPT/i.test(output) ? 'ChatGPT OAuth 로그인 연결됨' : 'Codex 로그인 연결됨 (API 인증)') : '터미널에서 codex login을 실행해 주세요' }));
+      child.on('close', code => resolve({ ok: code === 0, message: code === 0 ? (/ChatGPT/i.test(output) ? 'ChatGPT OAuth 로그인 연결됨' : 'Codex 로그인 연결됨 (API 인증)') : '디바이스 로그인을 진행해 주세요' }));
     });
   } catch (error) { return { ok: false, message: error.message }; }
+}
+let currentDeviceLogin = null;
+export async function codexStartDeviceAuth() {
+  if (currentDeviceLogin && currentDeviceLogin.status === 'pending') {
+    return { status: 'pending', ...currentDeviceLogin.info };
+  }
+  const { bin, prefix } = codexCommand();
+  const child = spawn(bin, [...prefix, 'login', '--device-auth'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const loginState = { status: 'pending', info: { url: 'https://auth.openai.com/codex/device', userCode: '', message: '인증 코드를 준비하고 있어요' }, child };
+  currentDeviceLogin = loginState;
+  let buffer = '';
+  child.stdout.on('data', chunk => {
+    buffer += chunk.toString();
+    const urlMatch = buffer.match(/https:\/\/[^\s]+/);
+    const codeMatch = buffer.match(/([A-Z0-9]{4,5}-[A-Z0-9]{4,5})/);
+    if (urlMatch) loginState.info.url = urlMatch[0];
+    if (codeMatch) loginState.info.userCode = codeMatch[1];
+    if (loginState.info.userCode) loginState.info.message = '브라우저에서 코드를 입력하여 로그인을 완료해 주세요';
+  });
+  child.stderr.on('data', chunk => { buffer += chunk.toString(); });
+  child.on('close', code => {
+    if (code === 0) {
+      loginState.status = 'completed';
+      loginState.info.message = 'ChatGPT OAuth 로그인이 성공적으로 완료되었습니다!';
+    } else {
+      loginState.status = 'failed';
+      loginState.info.message = '디바이스 인증이 취소되었거나 만료되었습니다.';
+    }
+    setTimeout(() => { if (currentDeviceLogin === loginState) currentDeviceLogin = null; }, 60_000);
+  });
+  child.on('error', err => {
+    loginState.status = 'failed';
+    loginState.info.message = `실행 오류: ${err.message}`;
+  });
+  const start = Date.now();
+  while (!loginState.info.userCode && Date.now() - start < 5000 && loginState.status === 'pending') {
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return { status: loginState.status, ...loginState.info };
+}
+export function codexGetDeviceAuthStatus() {
+  if (!currentDeviceLogin) return { status: 'idle' };
+  return { status: currentDeviceLogin.status, ...currentDeviceLogin.info };
 }
 export async function codexGenerate({ prompt, reference }, signal, progress) {
   const { bin, prefix } = codexCommand();
