@@ -69,7 +69,7 @@ function App() {
   const writeChain = useRef(Promise.resolve());
   const saveRevision = useRef(0);
   const notify = useCallback((message, error = false) => setToast({ id: ++toastSequence.current, message, error }), []);
-  const { job, cliInfo, refresh: refreshJob, start: startTraining, cancel: cancelTraining } = useTrainingJob(notify);
+  const { job, cliInfo, refresh: refreshJob, start: startTraining, cancel: cancelTraining } = useTrainingJob(notify, project?.trigger);
 
   async function refreshGoogle() {
     if (googleRequest.current) return googleRequest.current;
@@ -232,7 +232,7 @@ function App() {
   useEffect(() => {
     if (!loaded || !project) return;
     const owner = trainingProjectId();
-    if (job.status === 'completed' && job.outputFile && job.trigger === project.trigger && (!owner || owner === project.id) && project.lora?.file !== job.outputFile) {
+    if (job.status === 'completed' && job.outputFile && (!job.trigger || job.trigger === project.trigger) && (!owner || owner === project.id) && project.lora?.file !== job.outputFile) {
       updateProject({ lora: { file: job.outputFile, size: job.outputSize, completedAt: job.completedAt || Date.now(), model: job.modelId } });
     }
   }, [job, project, loaded]);

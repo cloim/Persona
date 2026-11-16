@@ -7,6 +7,7 @@ import { uploadTrainingPackage } from '../lib/drive.mjs';
 import { exportDataset, download, safeName, copyText } from '../lib/export.mjs';
 import { TRAINING_MODELS, trainingValid } from '../lib/training.mjs';
 import { startGoogleLogin } from '../components/GoogleConnection';
+import { api } from '../lib/api.mjs';
 
 export default function DeployPage({ project, updateProject, google, notify }) {
   const [upload, setUpload] = useState(null);
@@ -22,6 +23,24 @@ export default function DeployPage({ project, updateProject, google, notify }) {
   const examplePrompt = `${project.trigger}, a portrait in soft daylight`;
 
   useEffect(() => () => active.current?.abort(), []);
+  useEffect(() => {
+    if (!project?.lora?.file && project?.trigger) {
+      api(`/api/train/status?trigger=${encodeURIComponent(project.trigger)}`)
+        .then(res => {
+          if (res?.status === 'completed' && res?.outputFile) {
+            updateProject({
+              lora: {
+                file: res.outputFile,
+                size: res.outputSize,
+                completedAt: res.completedAt || Date.now(),
+                model: res.modelId || 'krea2'
+              }
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [project?.lora?.file, project?.trigger, updateProject]);
   useEffect(() => {
     const warn = e => { if (upload) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('beforeunload', warn);

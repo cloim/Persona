@@ -10,7 +10,57 @@ export function trainingProjectId() {
   try { return localStorage.getItem(TRAINING_PROJECT_KEY); } catch { return null; }
 }
 
-export default function useTrainingJob(notify) {
+function resizeImageIfLarge(dataUrl, maxDim = 1280, quality = 0.9) {
+  return new Promise(resolve => {
+    if (typeof Image === 'undefined' || typeof document === 'undefined') return resolve(dataUrl);
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width <= maxDim && height <= maxDim) return resolve(dataUrl);
+      if (width > height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+async function prepareSlotsForTraining(slots) {
+  const valid = (slots || []).filter(s => s.image && s.caption && s.caption.trim());
+  return Promise.all(valid.map(async s => {
+    let data = s.image.data;
+    let type = s.image.type || 'image/jpeg';
+    if (data && typeof data === 'string' && data.startsWith('data:image/')) {
+      try {
+        const resized = await resizeImageIfLarge(data, 1280, 0.9);
+        if (resized !== data) {
+          data = resized;
+          type = 'image/jpeg';
+        }
+      } catch {
+        // 원본 유지
+      }
+    }
+    return {
+      id: s.id,
+      caption: s.caption.trim(),
+      image: { data, type }
+    };
+  }));
+}
+
+export default function useTrainingJob(notify, trigger) {
   const [job, setJob] = useState({ status: 'idle' });
   const [cliInfo, setCliInfo] = useState(null);
   const previous = useRef('idle');
@@ -27,13 +77,14 @@ export default function useTrainingJob(notify) {
 
   const refresh = useCallback(async () => {
     try {
-      const next = await api('/api/train/status');
+      const url = trigger ? `/api/train/status?trigger=${encodeURIComponent(trigger)}` : '/api/train/status';
+      const next = await api(url);
       apply(next);
       return next;
     } catch {
       return { status: 'idle' };
     }
-  }, [apply]);
+  }, [apply, trigger]);
 
   useEffect(() => {
     api('/api/train/info').then(setCliInfo).catch(() => setCliInfo({ available: false }));
@@ -48,7 +99,10 @@ export default function useTrainingJob(notify) {
 
   const start = useCallback(async project => {
     try {
-      await api('/api/train/start', { project, slots: project.slots });
+      notifyRef.current('학습용 데이터셋을 준비하고 있어요...');
+      const cleanSlots = await prepareSlotsForTraining(project.slots);
+      const { slots: _omitted, ...projectMeta } = project;
+      await api('/api/train/start', { project: projectMeta, slots: cleanSlots });
       try { localStorage.setItem(TRAINING_PROJECT_KEY, project.id); } catch {}
       notifyRef.current('Modal 클라우드 A10G 인스턴스에 학습 작업을 요청했어요');
       previous.current = 'running';
