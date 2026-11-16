@@ -20,7 +20,7 @@ export function googleRouter({ origins, clientId, clientSecret, sessionSecret = 
   const configured=!!clientId && !!clientSecret;
   const sessionStore=new session.MemoryStore();
   const cleanup=setInterval(()=>{const now=Date.now();for(const [id,p]of packages)if(now-p.createdAt>24*3600_000)packages.delete(id);for(const[id,u]of uploads)if(now-u.createdAt>3600_000)uploads.delete(id);},300_000);cleanup.unref();
-  router.use(session({ name:'personas.google', secret:sessionSecret, store:sessionStore, resave:false, saveUninitialized:false, cookie:{httpOnly:true,sameSite:'lax',secure:'auto',maxAge:8*3600_000} }));
+  router.use(session({ name:'persona.google', secret:sessionSecret, store:sessionStore, resave:false, saveUninitialized:false, cookie:{httpOnly:true,sameSite:'lax',secure:'auto',maxAge:8*3600_000} }));
   const ownOrigin=req=>[...origins].find(o=>new URL(o).host===req.headers.host);
   const oauth=redirect=>clientFactory?clientFactory(redirect):new OAuth2Client(clientId,clientSecret,redirect);
   const requireUser=(req,res,next)=>{if(!req.session.google)return res.status(401).json({error:'Google에 로그인한 뒤 Drive를 연결해 주세요'});next();};
@@ -38,7 +38,7 @@ export function googleRouter({ origins, clientId, clientSecret, sessionSecret = 
   }
   const jsonCall=async(req,url,body)=> (await drive(req,url,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined})).json();
   const api='https://www.googleapis.com/drive/v3/files';
-  const folder=async(req,name,parent,role)=>jsonCall(req,api+'?fields=id,name,webViewLink',{name,mimeType:'application/vnd.google-apps.folder',...(parent?{parents:[parent]}:{}),appProperties:{personasRole:role}});
+  const folder=async(req,name,parent,role)=>jsonCall(req,api+'?fields=id,name,webViewLink',{name,mimeType:'application/vnd.google-apps.folder',...(parent?{parents:[parent]}:{}),appProperties:{personaRole:role,personasRole:role}});
   router.get('/status',(req,res)=>res.json({configured,user:req.session.google?.user||null,scopes:GOOGLE_SCOPES,redirectUri:ownOrigin(req)+'/api/google/callback'}));
   router.post('/login',(req,res)=>{
     if(!configured)return res.status(503).json({error:'서버의 Google OAuth 클라이언트 설정을 먼저 완료해 주세요'});
@@ -61,11 +61,11 @@ export function googleRouter({ origins, clientId, clientSecret, sessionSecret = 
       req.session.save(error=>res.redirect('/cloud?google='+(error?'error':'connected')));
     }catch{res.redirect('/cloud?google=error');}
   });
-  router.post('/logout',requireUser,async(req,res)=>{req.session.destroy(()=>{res.clearCookie('personas.google',{path:'/',sameSite:'lax',secure:req.secure});res.json({ok:true});});});
+  router.post('/logout',requireUser,async(req,res)=>{req.session.destroy(()=>{res.clearCookie('persona.google',{path:'/',sameSite:'lax',secure:req.secure});res.clearCookie('personas.google',{path:'/',sameSite:'lax',secure:req.secure});res.json({ok:true});});});
   router.get('/packages',requireUser,async(req,res)=>{
     try{
       if(req.query.pageToken!==undefined&&(typeof req.query.pageToken!=='string'||req.query.pageToken.length>2048))throw Error('Drive 목록 페이지를 다시 확인해 주세요');
-      const params=new URLSearchParams({q:"trashed = false and mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='personasRole' and value='package' }",fields:'nextPageToken,files(id,name,createdTime)',orderBy:'createdTime desc',pageSize:'50'});
+      const params=new URLSearchParams({q:"trashed = false and mimeType = 'application/vnd.google-apps.folder' and (appProperties has { key='personaRole' and value='package' } or appProperties has { key='personasRole' and value='package' })",fields:'nextPageToken,files(id,name,createdTime)',orderBy:'createdTime desc',pageSize:'50'});
       if(req.query.pageToken)params.set('pageToken',req.query.pageToken);
       const result=await jsonCall(req,api+'?'+params);
       res.json({files:result.files||[],nextPageToken:result.nextPageToken||null});
@@ -76,8 +76,8 @@ export function googleRouter({ origins, clientId, clientSecret, sessionSecret = 
       const id=req.params.id;
       if(!/^[a-zA-Z0-9_-]{1,200}$/.test(id))throw Error('Drive 프로젝트 주소를 확인해 주세요');
       const meta=await jsonCall(req,api+'/'+id+'?fields=id,mimeType,trashed,appProperties');
-      if(meta.trashed||meta.mimeType!=='application/vnd.google-apps.folder'||meta.appProperties?.personasRole!=='package')return res.status(404).json({error:'Personas에서 저장한 프로젝트 폴더를 선택해 주세요'});
-      const params=new URLSearchParams({q:`'${id}' in parents and trashed = false and name = 'dataset.zip' and appProperties has { key='personasRole' and value='dataset' }`,fields:'files(id,size)',pageSize:'2'});
+      if(meta.trashed||meta.mimeType!=='application/vnd.google-apps.folder'||(!['package'].includes(meta.appProperties?.personaRole)&&meta.appProperties?.personasRole!=='package'))return res.status(404).json({error:'Persona에서 저장한 프로젝트 폴더를 선택해 주세요'});
+      const params=new URLSearchParams({q:`'${id}' in parents and trashed = false and name = 'dataset.zip' and (appProperties has { key='personaRole' and value='dataset' } or appProperties has { key='personasRole' and value='dataset' })`,fields:'files(id,size)',pageSize:'2'});
       const {files=[]}=await jsonCall(req,api+'?'+params);
       if(files.length!==1)return res.status(404).json({error:'이 폴더의 학습 ZIP을 확인할 수 없어요. 저장을 완료한 프로젝트를 선택해 주세요'});
       const file=files[0],size=Number(file.size),limit=450*1024*1024;
@@ -92,9 +92,9 @@ export function googleRouter({ origins, clientId, clientSecret, sessionSecret = 
   router.post('/packages',requireUser,async(req,res)=>{
     try{
       if(typeof req.body?.projectId!=='string'||!req.body.projectId||typeof req.body.name!=='string')return res.status(400).json({error:'저장할 프로젝트를 확인해 주세요'});
-      const query="trashed = false and mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='personasRole' and value='root' }";
+      const query="trashed = false and mimeType = 'application/vnd.google-apps.folder' and (appProperties has { key='personaRole' and value='root' } or appProperties has { key='personasRole' and value='root' })";
       const found=await jsonCall(req,api+'?'+new URLSearchParams({q:query,fields:'files(id,name)',pageSize:'100'}));
-      const root=found.files?.[0]||await folder(req,'Personas Studio',null,'root');
+      const root=found.files?.[0]||await folder(req,'Persona Studio',null,'root');
       const runName=safeDriveName(req.body.name)+'_'+new Date().toISOString().replace(/[:.]/g,'-')+'_'+randomBytes(3).toString('hex');
       const run=await folder(req,runName,root.id,'package');const id=random();
       const pkg={id,session:req.sessionID,folderId:run.id,driveFolderPath:`${root.name}/${runName}`,createdAt:Date.now(),files:[]};packages.set(id,pkg);
@@ -106,7 +106,7 @@ export function googleRouter({ origins, clientId, clientSecret, sessionSecret = 
     const {name,size,mimeType}=req.body||{};
     if(!['dataset.zip','train.ipynb'].includes(name)||!Number.isInteger(size)||size<1||size>450*1024*1024)return res.status(400).json({error:'학습 ZIP 또는 노트북 크기를 확인해 주세요'});
     try{
-      const response=await drive(req,'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Type':name==='dataset.zip'?'application/zip':'application/x-ipynb+json','X-Upload-Content-Length':String(size)},body:JSON.stringify({name,parents:[pkg.folderId],appProperties:{personasRole:name==='dataset.zip'?'dataset':'notebook'}})});
+      const response=await drive(req,'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Type':name==='dataset.zip'?'application/zip':'application/x-ipynb+json','X-Upload-Content-Length':String(size)},body:JSON.stringify({name,parents:[pkg.folderId],appProperties:{personaRole:name==='dataset.zip'?'dataset':'notebook',personasRole:name==='dataset.zip'?'dataset':'notebook'}})});
       const location=response.headers.get('location');const url=new URL(location);
       if(url.origin!=='https://www.googleapis.com'||!url.pathname.startsWith('/upload/drive/'))throw Error('Drive 업로드 주소를 확인하지 못했어요');
       const id=random();uploads.set(id,{id,session:req.sessionID,packageId:pkg.id,url:location,total:size,offset:0,name,createdAt:Date.now(),busy:false});res.json({id,chunkSize:8*1024*1024});

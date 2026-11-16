@@ -66,7 +66,7 @@ export async function comfyGenerate({ settings, prompt, reference }, signal, pro
     if (!reference) throw new Error('이 워크플로에는 참조 이미지를 먼저 등록해 주세요');
     const match = reference.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/s);
     if (!match) throw new Error('참조 이미지 형식을 확인해 주세요');
-    const body = new FormData(); body.set('image', new Blob([Buffer.from(match[2], 'base64')], { type: match[1] }), `personas-${crypto.randomUUID()}.png`);
+    const body = new FormData(); body.set('image', new Blob([Buffer.from(match[2], 'base64')], { type: match[1] }), `persona-${crypto.randomUUID()}.png`);
     const uploaded = await (await request(`${base}/upload/image`, { method: 'POST', body, signal })).json();
     referenceName = (uploaded.subfolder ? uploaded.subfolder + '/' : '') + uploaded.name;
   }
@@ -120,7 +120,7 @@ export async function codexStatus() {
 }
 export async function codexGenerate({ prompt, reference }, signal, progress) {
   const { bin, prefix } = codexCommand();
-  const dir = await mkdtemp(path.join(tmpdir(), 'personas-image-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'persona-image-'));
   const root = path.resolve(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'generated_images');
   try {
     const args = [...prefix, 'exec', '--ignore-user-config', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'read-only', '--json', '-C', dir,

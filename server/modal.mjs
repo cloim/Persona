@@ -27,7 +27,7 @@ function detectRunningExternalModalApp() {
     if (jsonStart === -1) return null;
 
     const apps = JSON.parse(r.stdout.slice(jsonStart));
-    const running = apps.find(a => a.description?.includes('personas') && a.state === 'ephemeral' && !a.stopped_at);
+    const running = apps.find(a => a.description?.includes('persona') && a.state === 'ephemeral' && !a.stopped_at);
     if (!running) {
       externalJobCache = { time: now, data: null };
       return null;
@@ -193,19 +193,36 @@ export async function startModalTraining({ project, slots }) {
     writeFileSync(path.join(datasetJobDir, `${baseName}.txt`), slot.caption.trim() + '\n', 'utf-8');
   });
 
-  const scriptPath = path.join(root, 'scripts', 'modal_train.py');
+  const charaName = trigger ? trigger.replace(/[^a-zA-Z0-9_-]/g, '_') : 'character';
+  const isKrea2 = modelId === 'krea2';
+  const scriptPath = isKrea2
+    ? path.join(root, 'scripts', 'modal_train_krea2.py')
+    : path.join(root, 'scripts', 'modal_train.py');
 
-  const args = [
-    'run',
-    scriptPath,
-    '--dataset-dir', datasetJobDir,
-    '--model', modelId,
-    '--trigger', trigger,
-    '--steps', String(steps),
-    '--rank', String(rank),
-    '--lr', String(lr),
-    '--output-dir', outputDir,
-  ];
+  const epochs = Math.max(1, Math.round(steps / (validSlots.length || 36)));
+
+  const args = isKrea2
+    ? [
+        'run',
+        scriptPath,
+        '--name', charaName,
+        '--dataset-dir', datasetJobDir,
+        '--trigger-word', trigger,
+        '--epochs', String(epochs),
+        '--rank', String(rank || 32),
+        '--lr', String(lr || 0.0005),
+      ]
+    : [
+        'run',
+        scriptPath,
+        '--dataset-dir', datasetJobDir,
+        '--model', modelId,
+        '--trigger', trigger,
+        '--steps', String(steps),
+        '--rank', String(rank),
+        '--lr', String(lr),
+        '--output-dir', outputDir,
+      ];
 
   const job = {
     id: jobId,

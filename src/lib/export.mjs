@@ -18,16 +18,18 @@ export async function exportDataset(project, options = {}) {
   });
   zip.file('train.yaml', JSON.stringify(config, null, 2) + '\n');
   zip.file('manifest.json', JSON.stringify({ version: 2, name: project.name, trigger: project.trigger, model: project.model, identity: project.identity, style: project.style, reference: project.reference, training: project.training, previousTraining: project.previousTraining, exportedAt: new Date().toISOString(), count: project.slots.length, shots: project.slots.map(({ image, ...s }) => ({ ...s, image: { name: image.name, width: image.width, height: image.height, hash: image.hash } })) }, null, 2));
-  zip.file('README.txt', 'Personas 학습 데이터셋 패키지\n\n' +
+  zip.file('README.txt', 'Persona 학습 데이터셋 패키지\n\n' +
     '1. Modal CLI로 클라우드 학습:\n' +
-    `   modal run scripts/modal_train.py --dataset-dir ./dataset --trigger ${safeName(project.trigger)} --model ${project.model}\n\n` +
+    (project.model === 'krea2'
+      ? `   modal run scripts/modal_train_krea2.py --name ${safeName(project.trigger)} --dataset-dir ./dataset --trigger-word "${project.trigger}"\n\n`
+      : `   modal run scripts/modal_train.py --dataset-dir ./dataset --trigger ${safeName(project.trigger)} --model ${project.model}\n\n`) +
     '2. 로컬 AI Toolkit으로 직접 학습:\n' +
     '   python run.py train.yaml\n\n' +
     '3. 결과 .safetensors를 ComfyUI/models/loras에 복사하여 프롬프트에 트리거를 넣어 사용하세요.\n');
   return zip.generateAsync({ type: 'blob', compression: 'STORE' });
 }
 export function validateBackup(data) {
-  if (!data || data.format !== 'personas-project-v1' || !data.project || ![12,24,36,48].includes(data.project.size)) throw new Error('Personas 프로젝트 백업 파일을 선택해 주세요');
+  if (!data || !['persona-project-v1', 'personas-project-v1'].includes(data.format) || !data.project || ![12,24,36,48].includes(data.project.size)) throw new Error('Persona 프로젝트 백업 파일을 선택해 주세요');
   const p = data.project;
   if (typeof p.name !== 'string' || typeof p.trigger !== 'string' || typeof p.identity !== 'string' || !['illustration','anime','photo'].includes(p.style) || !Array.isArray(p.slots) || p.slots.length !== p.size || ![...TRAINING_MODELS.map(m => m.id), 'sdxl', 'sd15'].includes(p.model) || !p.training || typeof p.training.checkpoint !== 'string') throw new Error('프로젝트 데이터 형식을 확인해 주세요');
   const validImage = image => typeof image.data === 'string' && ['image/png','image/jpeg','image/webp'].includes(image.type) && image.data.startsWith(`data:${image.type};base64,`) && /^data:image\/(png|jpeg|webp);base64,[a-zA-Z0-9+/=]+$/.test(image.data) && Number.isFinite(image.width) && image.width > 0 && Number.isFinite(image.height) && image.height > 0 && typeof image.name === 'string' && /^[a-f0-9]{64}$/.test(image.hash);
@@ -54,9 +56,9 @@ export async function importTrainingPackage(bytes,readImage,{signal,onProgress=(
     if(size>35*1024*1024||unpacked>600*1024*1024)throw Error('학습 ZIP의 압축 해제 크기를 확인해 주세요');
   }
   const manifestFile=zip.file('manifest.json');
-  if(!manifestFile||manifestFile._data.uncompressedSize>35*1024*1024)throw Error('Personas 학습 패키지의 manifest.json을 확인해 주세요');
+  if(!manifestFile||manifestFile._data.uncompressedSize>35*1024*1024)throw Error('Persona 학습 패키지의 manifest.json을 확인해 주세요');
   const m=JSON.parse(await manifestFile.async('string'));
-  if(![1,2].includes(m.version)||![12,24,36,48].includes(m.count)||!Array.isArray(m.shots)||m.shots.length!==m.count||typeof m.trigger!=='string'||!/^[a-zA-Z0-9_-]{2,64}$/.test(m.trigger))throw Error('Personas 학습 패키지 정보를 확인해 주세요');
+  if(![1,2].includes(m.version)||![12,24,36,48].includes(m.count)||!Array.isArray(m.shots)||m.shots.length!==m.count||typeof m.trigger!=='string'||!/^[a-zA-Z0-9_-]{2,64}$/.test(m.trigger))throw Error('Persona 학습 패키지 정보를 확인해 주세요');
   const p={...newProject(),name:m.name,trigger:m.trigger,model:m.model,size:m.count,identity:m.version===2?m.identity:'',style:m.version===2?m.style:'illustration',reference:m.version===2?m.reference:null};
   p.training=m.version===2?m.training:defaultTraining(m.model);
   if(m.previousTraining)p.previousTraining=m.previousTraining;
@@ -77,5 +79,5 @@ export async function importTrainingPackage(bytes,readImage,{signal,onProgress=(
     onProgress({label:'이미지와 캡션 복원 중',percent:Math.round((index+1)/m.count*100)});
   }
   checkAbort();
-  return{project:validateBackup({format:'personas-project-v1',project:p}),legacy:m.version===1};
+  return{project:validateBackup({format:'persona-project-v1',project:p}),legacy:m.version===1};
 }

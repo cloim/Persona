@@ -34,7 +34,7 @@ export async function captionImage({ settings, image, trigger, style, format }, 
   return { caption:cleanCaption(text,trigger), provider };
 }
 async function codexCaption(image, prompt, signal) {
-  const {bin,prefix}=codexCommand();const dir=await mkdtemp(path.join(tmpdir(),'personas-caption-'));
+  const {bin,prefix}=codexCommand();const dir=await mkdtemp(path.join(tmpdir(),'persona-caption-'));
   try {
     const mime=image.slice(5,image.indexOf(';')),file=path.join(dir,'image.'+mime.split('/')[1]);
     const output=path.join(dir,'caption.txt');await writeFile(file,Buffer.from(image.split(',')[1],'base64'));

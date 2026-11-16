@@ -136,25 +136,25 @@ function App() {
     setProject(restored);navigate('/dataset');
   }
   const common = { project, settings, updateProject, updateSlot, notify, openShot: setSelectedShot, editCharacter: () => setShowCharacter(true), generation, setGeneration, projectRef, registerImage,google,refreshGoogle,captionTask,runCaptions,cancelCaptions:()=>captionAbort.current?.abort(),importProject };
-  const backup = () => { download(new Blob([JSON.stringify({ format: 'personas-project-v1', project }, null, 2)], { type: 'application/json' }), `${project.trigger || 'character'}-project.json`); notify('이미지와 설정을 담은 프로젝트 백업을 내려받았어요'); };
+  const backup = () => { download(new Blob([JSON.stringify({ format: 'persona-project-v1', project }, null, 2)], { type: 'application/json' }), `${project.trigger || 'character'}-project.json`); notify('이미지와 설정을 담은 프로젝트 백업을 내려받았어요'); };
   async function importBackup(file) {
     if (!file) return;
     try { if (file.size > 400 * 1024 * 1024) throw new Error('백업 파일은 400MB 이내로 선택해 주세요'); const restored = validateBackup(JSON.parse(await file.text())); if (generation||captionTask) throw new Error('이미지 생성이 끝나면 프로젝트를 가져와 주세요'); if (project) await saveProject(project); await saveProject(restored); setProject(restored); notify('프로젝트를 새 사본으로 가져왔어요'); }
     catch (error) { notify(error.message, true); }
     finally { backupInput.current.value = ''; }
   }
-  if (!loaded) return <div className="boot"><div className="brand-mark">p<span>•</span></div><h1>Personas</h1><p>{loadError || '캐릭터 작업실을 준비하고 있어요'}</p>{loadError && <Button onClick={() => location.reload()}>새로고침</Button>}</div>;
+  if (!loaded) return <div className="boot"><div className="brand-mark">p<span>•</span></div><h1>Persona</h1><p>{loadError || '캐릭터 작업실을 준비하고 있어요'}</p>{loadError && <Button onClick={() => location.reload()}>새로고침</Button>}</div>;
   const ready = readiness(project); const current = pages[location.pathname] || pages['/dataset'];
   return <div className="app-shell">
     {mobileNav && <div className="nav-scrim" onClick={() => setMobileNav(false)}/>}
     <aside className={`sidebar ${mobileNav ? 'mobile-open' : ''}`}>
-      <NavLink to="/dataset" className="brand"><div className="brand-mark">p<span>•</span></div><div>personas<span>캐릭터가 시작되는 곳</span></div></NavLink>
+      <NavLink to="/dataset" className="brand"><div className="brand-mark">p<span>•</span></div><div>persona<span>캐릭터가 시작되는 곳</span></div></NavLink>
       <button className="project-switcher" onClick={() => setShowProjects(true)}><div className="small-avatar">{project.reference ? <img src={project.reference.data} alt=""/> : <Leaf size={18}/>}</div><span><small>내 프로젝트</small><strong>{project.name}</strong></span><MoreHorizontal size={17}/></button>
       <div className="nav-heading">작업 공간</div>
       <nav>{navItems.map(({ to, label, icon: Icon }, index) => <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon size={19}/><span>{label}</span>{index === 0 && <span className="nav-count">{project.size}</span>}</NavLink>)}</nav>
       <div className="nav-heading second">도구와 도움말</div>
       <nav><NavLink className="nav-item" to="/connections"><WandSparkles size={19}/><span>AI 생성 연결</span><i className="connection-dot"/></NavLink><NavLink className="nav-item" to="/cloud"><CloudOff size={19}/><span>Google Drive 보관</span></NavLink><NavLink className="nav-item" to="/guide"><BookOpen size={19}/><span>시작 가이드</span></NavLink></nav>
-      <div className="sidebar-bottom"><div className="local-note"><HardDrive size={17}/><div><strong>이 기기에 안전하게</strong><span>이미지는 브라우저에 자동 저장</span></div></div>{!installed && <button className="install-button" disabled={installing} aria-busy={installing||undefined} onClick={installApp}>{installing?<RefreshCw size={16} className="spin"/>:<Download size={16}/>}<span>{installing?"설치 창을 여는 중":installEvent?"앱으로 설치하기":"홈 화면 추가 안내"}</span><ArrowRight size={15}/></button>}<div className="sidebar-foot"><span>Personas Studio</span><span>v1.0</span></div></div>
+      <div className="sidebar-bottom"><div className="local-note"><HardDrive size={17}/><div><strong>이 기기에 안전하게</strong><span>이미지는 브라우저에 자동 저장</span></div></div>{!installed && <button className="install-button" disabled={installing} aria-busy={installing||undefined} onClick={installApp}>{installing?<RefreshCw size={16} className="spin"/>:<Download size={16}/>}<span>{installing?"설치 창을 여는 중":installEvent?"앱으로 설치하기":"홈 화면 추가 안내"}</span><ArrowRight size={15}/></button>}<div className="sidebar-foot"><span>Persona Studio</span><span>v1.0</span></div></div>
     </aside>
     <div className="app-main">
       <header className="topbar"><button className="icon-button mobile-menu" aria-label="메뉴 열기" onClick={() => setMobileNav(true)}><Menu size={21}/></button><div className="page-heading"><h1>{current[0]}</h1><span>{current[1]}</span></div><div className="topbar-actions"><span className={`save-status ${saveState === 'error' ? 'error' : ''}`}>{online ? <CheckCircle2 size={14}/> : <CloudOff size={14}/>}<span>{saveState === 'saving' ? '저장 중' : saveState === 'error' ? '백업이 필요해요' : online ? '자동 저장됨' : '오프라인 저장'}</span></span><button className="icon-button" aria-label="프로젝트 백업" data-tooltip="프로젝트 백업" onClick={backup}><ArrowDownToLine size={19}/></button><button className="icon-button" aria-label="프로젝트 설정" data-tooltip="프로젝트 설정" onClick={() => setShowCharacter(true)}><Settings2 size={19}/></button><NavLink to="/cloud" className="user-avatar" aria-label={google?.user?"Google 계정: "+google.user.email:"Google 로그인"}>{google?.user?.name?.slice(0,1)||"G"}</NavLink></div></header>

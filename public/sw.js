@@ -1,4 +1,4 @@
-const CACHE = 'personas-shell-v2';
+const CACHE = 'persona-shell-v2';
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);

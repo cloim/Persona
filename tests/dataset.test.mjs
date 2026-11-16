@@ -34,7 +34,8 @@ test('training ZIP pairs each image with caption and has matching AI Toolkit con
 });
 test('unfinished set cannot be exported as training-ready', async()=>{ await assert.rejects(()=>exportDataset(newProject())); });
 test('backup import rejects malformed and non-image data and creates a new project ID',()=>{
-  const p=newProject(); const backup={format:'personas-project-v1',project:p}; assert.notEqual(validateBackup(backup).id,p.id);
+  const p=newProject(); const backup={format:'persona-project-v1',project:p}; assert.notEqual(validateBackup(backup).id,p.id);
+  const legacyBackup={format:'personas-project-v1',project:p}; assert.notEqual(validateBackup(legacyBackup).id,p.id);
   assert.throws(()=>validateBackup({})); p.slots[0].image={data:'data:text/html;base64,abcd',width:100,height:100};assert.throws(()=>validateBackup(backup));
 });
 test('each base emits its own architecture, checkpoint, and training schedule',()=>{

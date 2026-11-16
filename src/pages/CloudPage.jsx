@@ -170,7 +170,7 @@ export default function CloudPage({ project, updateProject, google, refreshGoogl
             </Button>
             {upload && <Button onClick={() => controller?.abort()}>중단</Button>}
           </div>
-          <p className="surface-note">Drive의 Personas Studio 폴더 아래 매번 새로운 패키지를 만들어요. 기존 파일을 덮어쓰지 않습니다.</p>
+          <p className="surface-note">Drive의 Persona Studio 폴더 아래 매번 새로운 패키지를 만들어요. 기존 파일을 덮어쓰지 않습니다.</p>
         </section>
 
         <aside>

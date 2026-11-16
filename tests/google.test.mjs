@@ -19,7 +19,7 @@ test('OAuth state, private session and resumable Drive package flow',async t=>{
   if(options.method==='POST'){const data=JSON.parse(options.body);return Response.json({id:'folder-'+external.length,name:data.name});}
   const params=new URL(url).searchParams;
   if(params.get('alt')==='media')return new Response(new Uint8Array([1,2,3,4]));
-  if(params.get('fields')?.includes('appProperties'))return Response.json({id:'saved-folder',mimeType:'application/vnd.google-apps.folder',appProperties:{personasRole:url.includes('outside')?'other':'package'}});
+  if(params.get('fields')?.includes('appProperties'))return Response.json({id:'saved-folder',mimeType:'application/vnd.google-apps.folder',appProperties:{personaRole:url.includes('outside')?'other':'package',personasRole:url.includes('outside')?'other':'package'}});
   if(params.get('q')?.includes('in parents'))return Response.json({files:[{id:'saved-zip',size:'4'}]});
   if(params.get('q')?.includes("value='package'"))return Response.json({files:[{id:'saved-folder',name:'Example',createdTime:'2026-11-15T00:00:00Z'}],nextPageToken:'next-page'});
   return Response.json({files:[]});
@@ -34,7 +34,7 @@ test('OAuth state, private session and resumable Drive package flow',async t=>{
  let login=await(await call('/login',{})).json();assert.equal((await call('/callback?state=wrong&code=mock')).status,302);assert.equal((await(await call('/status')).json()).user,null);
  login=await(await call('/login',{})).json();const state=new URL(login.url).searchParams.get('state');assert.equal((await call('/callback?state='+state+'&code=mock')).status,302);
  const status=await(await call('/status')).json();assert.equal(status.user.email,'user@example.com');assert.ok(!JSON.stringify(status).includes('test-access'));
- const pkg=await(await call('/packages',{projectId:'project-1',name:'Example'})).json();assert.ok(pkg.driveFolderPath.startsWith('Personas Studio/'));
+ const pkg=await(await call('/packages',{projectId:'project-1',name:'Example'})).json();assert.ok(pkg.driveFolderPath.startsWith('Persona Studio/'));
  for(const name of ['dataset.zip']){const upload=await(await call(`/packages/${pkg.id}/uploads`,{name,size:4})).json();let result=await(await call(`/uploads/${upload.id}/chunk`,new Uint8Array([1,2]),{'Content-Range':'bytes 0-1/4'})).json();assert.equal(result.offset,2);assert.ok(!result.file);result=await(await call(`/uploads/${upload.id}/chunk`,new Uint8Array([3,4]),{'Content-Range':'bytes 2-3/4'})).json();assert.equal(result.offset,4);}
  const complete=await(await call(`/packages/${pkg.id}/complete`,{})).json();assert.ok(complete.folderUrl.startsWith('https://drive.google.com/drive/folders/'));assert.ok(!external.some(req=>req.url.includes('permissions')));
  const list=await(await call('/packages?pageToken=previous-page')).json();assert.equal(list.files[0].id,'saved-folder');assert.equal(list.nextPageToken,'next-page');assert.ok(external.some(req=>new URL(req.url).searchParams.get('pageToken')==='previous-page'));

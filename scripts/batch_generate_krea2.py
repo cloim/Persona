@@ -1,33 +1,52 @@
+"""ComfyUI 및 ComfyMUI 기반 범용 Krea 2 LoRA 어셈블 배치 생성 파이프라인.
+
+어떤 캐릭터 LoRA라도 트리거 워드와 LoRA 파일명, 수량을 지정하면 ComfyMUI의 어셈블 카테고리를 무작위 조합하여
+다채롭고 고품질인 이미지를 연속 생성하고 로컬로 자동 동기화합니다.
+
+주요 특징:
+- ComfyMUI DB 연동: 사용자가 웹 UI에서 설정한 어셈블 카테고리와 속성(의상, 구도, 조명, 표정 등)을 실시간 반영
+- 유연한 파라미터 제어: 캐릭터명, LoRA 파일명, 적용 강도, 수량, 해상도, 스텝 등을 CLI 인수로 완전 제어
+- 실시간 로컬 동기화: 도커 컨테이너에서 생성된 이미지를 로컬 output 디렉터리로 즉시 복사 및 로그 기록
+
+사용 예시:
+  # 기본 OMZ 캐릭터 64장 생성
+  python scripts/batch_generate_krea2.py --character omz --count 64
+
+  # 다른 캐릭터 신규 생성 (예: ruby 캐릭터, LoRA 강도 0.8)
+  python scripts/batch_generate_krea2.py --character ruby --lora "Krea2/ruby_krea2.safetensors" --strength 0.8 --count 32
+"""
+
+import argparse
 import json
 import os
 import random
 import sqlite3
 import sys
 import time
-import urllib.error
 import urllib.request
 
 COMFYUI_HOST = "127.0.0.1:8188"
 COMFYUI_URL = f"http://{COMFYUI_HOST}"
-DB_PATH = r"D:\PROJECTS\ComfyMUI\data\comfymui.db"
-TOTAL_IMAGES = 64
-PREFIX = "omz_krea2_v2/omz"
+DEFAULT_DB_PATH = r"D:\PROJECTS\ComfyMUI\data\comfymui.db"
 
-def load_assemble_elements():
-    """Load assemble categories and attributes from ComfyMUI DB."""
-    if os.path.exists(DB_PATH):
+
+def load_assemble_elements(db_path: str):
+    """Load assemble categories and attributes from ComfyMUI DB or fallback defaults."""
+    if os.path.exists(db_path):
         try:
-            conn = sqlite3.connect(DB_PATH)
+            conn = sqlite3.connect(db_path)
             c = conn.cursor()
             c.execute("SELECT value FROM state WHERE key='cm-prompt-assemble'")
             row = c.fetchone()
             conn.close()
             if row:
-                return json.loads(row[0])
+                elements = json.loads(row[0])
+                if isinstance(elements, list) and len(elements) > 0:
+                    return elements
         except Exception as e:
-            print(f"[WARN] Failed to load from DB: {e}, falling back to defaults")
+            print(f"[WARN] Failed to load assemble from DB ({e}), using default assemble elements")
 
-    # Fallback to hardcoded defaults
+    # Fallback to standard 7 categories
     return [
         {
             "id": "wardrobe",
@@ -110,9 +129,9 @@ def load_assemble_elements():
         }
     ]
 
-def build_assembled_prompt(elements):
+
+def build_assembled_prompt(base_trigger: str, elements: list) -> str:
     """Assemble a random prompt from each category."""
-    base_trigger = "omz, a sensual seductive photo of a Korean curvy woman"
     picked = []
     for elem in elements:
         attrs = elem.get("attributes", [])
@@ -121,13 +140,27 @@ def build_assembled_prompt(elements):
     random.shuffle(picked)
     return f"{base_trigger}, {', '.join(picked)}"
 
-def create_workflow(prompt_text, seed, lora_strength=0.85):
-    """Build ComfyUI workflow matching user's exact configuration."""
+
+def create_workflow(
+    prompt_text: str,
+    seed: int,
+    lora_name: str,
+    lora_strength: float = 0.85,
+    model_name: str = "Krea2/kroma-v0.3.1-turbo-opd-W8A8.safetensors",
+    clip_name: str = "Qwen/qwen3vl_4b_fp8_scaled.safetensors",
+    vae_name: str = "Qwen/qwen_image_vae.safetensors",
+    width: int = 896,
+    height: int = 1152,
+    steps: int = 8,
+    cfg: float = 1.0,
+    prefix: str = "batch_krea2/img",
+):
+    """Build ComfyUI workflow for Krea 2."""
     return {
         "1": {
             "class_type": "UNETLoader",
             "inputs": {
-                "unet_name": "Krea2/kroma-v0.3.1-turbo-opd-W8A8.safetensors",
+                "unet_name": model_name,
                 "weight_dtype": "default"
             }
         },
@@ -147,8 +180,8 @@ def create_workflow(prompt_text, seed, lora_strength=0.85):
         "4": {
             "class_type": "EmptySD3LatentImage",
             "inputs": {
-                "width": 896,
-                "height": 1152,
+                "width": width,
+                "height": height,
                 "batch_size": 1
             }
         },
@@ -160,8 +193,8 @@ def create_workflow(prompt_text, seed, lora_strength=0.85):
                 "negative": ["3", 0],
                 "latent_image": ["4", 0],
                 "seed": seed,
-                "steps": 8,
-                "cfg": 1.0,
+                "steps": steps,
+                "cfg": cfg,
                 "sampler_name": "euler",
                 "scheduler": "simple",
                 "denoise": 1.0
@@ -178,33 +211,34 @@ def create_workflow(prompt_text, seed, lora_strength=0.85):
             "class_type": "SaveImage",
             "inputs": {
                 "images": ["6", 0],
-                "filename_prefix": PREFIX
+                "filename_prefix": prefix
             }
         },
         "8": {
             "class_type": "CLIPLoader",
             "inputs": {
-                "clip_name": "Qwen/qwen3vl_4b_fp8_scaled.safetensors",
+                "clip_name": clip_name,
                 "type": "krea2"
             }
         },
         "9": {
             "class_type": "VAELoader",
             "inputs": {
-                "vae_name": "Qwen/qwen_image_vae.safetensors"
+                "vae_name": vae_name
             }
         },
         "100": {
             "class_type": "LoraLoaderModelOnly",
             "inputs": {
                 "model": ["1", 0],
-                "lora_name": "Krea2/omz_krea2_v2.safetensors",
+                "lora_name": lora_name,
                 "strength_model": lora_strength
             }
         }
     }
 
-def queue_prompt(prompt_workflow):
+
+def queue_prompt(prompt_workflow: dict) -> str:
     """Send prompt to ComfyUI API and return prompt_id."""
     data = json.dumps({"prompt": prompt_workflow}).encode("utf-8")
     req = urllib.request.Request(
@@ -216,7 +250,8 @@ def queue_prompt(prompt_workflow):
         res = json.loads(resp.read().decode("utf-8"))
         return res.get("prompt_id")
 
-def wait_for_prompt(prompt_id, timeout=120):
+
+def wait_for_prompt(prompt_id: str, timeout: int = 180):
     """Wait for prompt execution to finish."""
     start = time.time()
     while time.time() - start < timeout:
@@ -235,33 +270,73 @@ def wait_for_prompt(prompt_id, timeout=120):
         time.sleep(2)
     return False, []
 
-def main():
-    count = TOTAL_IMAGES
-    if len(sys.argv) > 1:
-        try:
-            count = int(sys.argv[1])
-        except ValueError:
-            pass
 
-    print(f"=== Krea 2 + OMZ v2 LoRA Assemble Batch Generator (Total: {count}) ===")
-    elements = load_assemble_elements()
-    print(f"Loaded {len(elements)} assemble categories.")
+def main():
+    parser = argparse.ArgumentParser(description="ComfyUI 범용 Krea 2 LoRA 어셈블 배치 생성기")
+    parser.add_argument("--character", type=str, default="omz", help="캐릭터 식별자 (예: omz, ruby)")
+    parser.add_argument("--trigger", type=str, default="", help="기본 트리거 프롬프트 문구")
+    parser.add_argument("--lora", type=str, default="", help="LoRA 파일명 (예: Krea2/omz_krea2_v2.safetensors)")
+    parser.add_argument("--strength", type=float, default=0.85, help="LoRA 적용 강도 (기본값: 0.85)")
+    parser.add_argument("--count", type=int, default=64, help="생성할 이미지 총 수량 (기본값: 64)")
+    parser.add_argument("--width", type=int, default=896, help="가로 해상도 (기본값: 896)")
+    parser.add_argument("--height", type=int, default=1152, help="세로 해상도 (기본값: 1152)")
+    parser.add_argument("--steps", type=int, default=8, help="KSampler 스텝 수 (기본값: 8)")
+    parser.add_argument("--cfg", type=float, default=1.0, help="CFG 스케일 (기본값: 1.0)")
+    parser.add_argument("--model", type=str, default="Krea2/kroma-v0.3.1-turbo-opd-W8A8.safetensors", help="UNET 모델명")
+    parser.add_argument("--db-path", type=str, default=DEFAULT_DB_PATH, help="ComfyMUI DB 경로")
+    parser.add_argument("--output-dir", type=str, default="", help="로컬 저장 경로")
+    args = parser.parse_args()
+
+    # 파라미터 보정
+    chara = args.character
+    trigger = args.trigger if args.trigger else f"{chara}, a sensual seductive photo of a Korean curvy woman"
+    
+    if args.lora:
+        lora_name = args.lora
+    else:
+        # 자동 탐색: v2 또는 일반 이름
+        lora_name = f"Krea2/{chara}_krea2_v2.safetensors"
+
+    prefix = f"{chara}_krea2/img"
+    local_dir = args.output_dir if args.output_dir else rf"D:\PROJECTS\Persona\output\batch_{chara}"
+    os.makedirs(local_dir, exist_ok=True)
+
+    print("=== [ComfyUI 범용 Krea 2 LoRA 어셈블 배치 생성기] ===")
+    print(f"  캐릭터: {chara}")
+    print(f"  LoRA: {lora_name} (강도: {args.strength})")
+    print(f"  트리거: {trigger}")
+    print(f"  목표 수량: {args.count}장 | 해상도: {args.width}x{args.height} | {args.steps}스텝 (CFG {args.cfg})")
+    print(f"  로컬 저장 위치: {local_dir}")
+
+    elements = load_assemble_elements(args.db_path)
+    print(f"어셈블 카테고리 로드 완료: {len(elements)}개 카테고리")
 
     log_records = []
     success_count = 0
 
-    for idx in range(1, count + 1):
-        prompt_text = build_assembled_prompt(elements)
+    for idx in range(1, args.count + 1):
+        prompt_text = build_assembled_prompt(trigger, elements)
         seed = random.randint(100000000000, 999999999999)
-        workflow = create_workflow(prompt_text, seed)
+        workflow = create_workflow(
+            prompt_text=prompt_text,
+            seed=seed,
+            lora_name=lora_name,
+            lora_strength=args.strength,
+            model_name=args.model,
+            width=args.width,
+            height=args.height,
+            steps=args.steps,
+            cfg=args.cfg,
+            prefix=prefix,
+        )
 
-        print(f"\n[{idx}/{count}] Queuing seed={seed}...")
-        print(f"  Prompt: {prompt_text[:100]}...")
+        print(f"\n[{idx}/{args.count}] 큐 등록 중 (seed: {seed})...")
+        print(f"  프롬프트: {prompt_text[:90]}...")
 
         try:
             prompt_id = queue_prompt(workflow)
             if not prompt_id:
-                print(f"  [ERR] Failed to get prompt_id for #{idx}")
+                print(f"  [ERROR] #{idx} 큐 등록 실패")
                 continue
 
             t0 = time.time()
@@ -271,14 +346,12 @@ def main():
             if ok:
                 success_count += 1
                 img_names = [img.get("filename") for img in images]
-                print(f"  [OK] Completed in {elapsed:.1f}s -> {img_names}")
-                
-                # Copy from container to local output folder for easy browsing
-                local_dir = r"D:\PROJECTS\Personas\output\batch_omz_v2"
-                os.makedirs(local_dir, exist_ok=True)
+                print(f"  [성공] 생성 소요 시간: {elapsed:.1f}초 -> {img_names}")
+
+                # 도커 컨테이너에서 로컬로 실시간 복사
                 for fname in img_names:
                     try:
-                        os.system(f'docker cp "comfymui-comfyui:/data/output/omz_krea2_v2/{fname}" "{local_dir}\\{fname}" >nul 2>&1')
+                        os.system(f'docker cp "comfymui-comfyui:/data/output/{chara}_krea2/{fname}" "{local_dir}\\{fname}" >nul 2>&1')
                     except Exception:
                         pass
 
@@ -288,37 +361,38 @@ def main():
                     "seed": seed,
                     "prompt": prompt_text,
                     "images": img_names,
-                    "elapsed": round(elapsed, 1)
+                    "elapsed": round(elapsed, 1),
                 }
                 log_records.append(record)
 
-                # Real-time status update
+                # 실시간 진행 상황 파일 저장
                 status_file = os.path.join(local_dir, "batch_status.json")
                 try:
                     with open(status_file, "w", encoding="utf-8") as sf:
                         json.dump({
                             "current": idx,
-                            "total": count,
+                            "total": args.count,
                             "success": success_count,
-                            "percent": round(success_count / count * 100, 1),
+                            "percent": round(success_count / args.count * 100, 1),
                             "latest_image": img_names,
-                            "latest_prompt": prompt_text
+                            "latest_prompt": prompt_text,
                         }, sf, indent=2, ensure_ascii=False)
                 except Exception:
                     pass
             else:
-                print(f"  [WARN] Timed out or failed for #{idx}")
+                print(f"  [경고] #{idx} 생성 시간 초과 또는 실패")
         except Exception as e:
-            print(f"  [EXC] Error on #{idx}: {e}")
+            print(f"  [예외] #{idx} 실행 오류: {e}")
 
-    # Save log
-    os.makedirs(r"D:\PROJECTS\Personas\output\batch_omz_v2", exist_ok=True)
-    out_json = r"D:\PROJECTS\Personas\output\batch_omz_v2\assembled_prompts_log.json"
+    # 전체 로그 파일 저장
+    out_json = os.path.join(local_dir, "assembled_prompts_log.json")
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(log_records, f, indent=2, ensure_ascii=False)
 
-    print(f"\n=== Batch Generation Finished: {success_count}/{count} succeeded ===")
-    print(f"Log saved to: {out_json}")
+    print(f"\n=== 배치 생성 완료: {success_count}/{args.count}장 성공 ===")
+    print(f"  결과 폴더: {local_dir}")
+    print(f"  상세 로그: {out_json}")
+
 
 if __name__ == "__main__":
     main()

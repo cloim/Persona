@@ -13,7 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
 const app = express(); const token = randomBytes(32).toString('hex');
 const port = Number(process.env.PORT || 4317); const production = process.argv.includes('--production');
-const access = allowedAccess(port, process.env.PERSONAS_ALLOWED_ORIGINS);
+const access = allowedAccess(port, process.env.PERSONA_ALLOWED_ORIGINS || process.env.PERSONAS_ALLOWED_ORIGINS);
 const jobs = new Map();
 app.disable('x-powered-by');
 app.set('trust proxy', 'loopback');
@@ -22,7 +22,7 @@ app.use('/api', (req, res, next) => {
   if (!access.hosts.has(host)) return res.status(403).json({ error: '허용된 작업실 주소에서 연결해 주세요' });
   if (req.headers.origin && !access.origins.has(req.headers.origin)) return res.status(403).json({ error: '같은 작업실에서 요청해 주세요' });
   res.set('Cache-Control', 'no-store');
-  if (req.method !== 'GET' && req.headers['x-personas-token'] !== token) return res.status(403).json({ code:'csrf', error: '작업실을 새로고침한 뒤 다시 시도해 주세요' });
+  if (req.method !== 'GET' && req.headers['x-persona-token'] !== token && req.headers['x-personas-token'] !== token) return res.status(403).json({ code:'csrf', error: '작업실을 새로고침한 뒤 다시 시도해 주세요' });
   next();
 });
 app.use(express.json({ limit: '38mb' }));
@@ -82,4 +82,4 @@ app.use('/api', (req, res) => res.status(404).json({ error: '지원하는 API �
 if (production) { app.use(express.static(path.join(root, 'dist'))); app.get('/{*path}', (req, res) => res.sendFile(path.join(root, 'dist/index.html'))); }
 else { const { createServer: createViteServer } = await import('vite'); const vite = await createViteServer({ root, server: { middlewareMode: true }, appType: 'spa' }); app.use(vite.middlewares); }
 app.use((error, req, res, next) => { res.status(400).json({ error: '요청 형식과 파일 크기를 확인해 주세요' }); });
-app.listen(port, '127.0.0.1', () => console.log(`Personas 작업실 http://localhost:${port} (${production ? 'production' : 'development'})`));
+app.listen(port, '127.0.0.1', () => console.log(`Persona 작업실 http://localhost:${port} (${production ? 'production' : 'development'})`));

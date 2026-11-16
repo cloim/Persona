@@ -1,5 +1,28 @@
 import { openDB } from 'idb';
-const db = openDB('personas-studio', 1, { upgrade(db) { db.createObjectStore('projects', { keyPath: 'id' }); db.createObjectStore('settings'); } });
+async function initDb() {
+  const database = await openDB('persona-studio', 1, {
+    upgrade(db) {
+      db.createObjectStore('projects', { keyPath: 'id' });
+      db.createObjectStore('settings');
+    }
+  });
+  try {
+    const existing = await database.getAll('projects');
+    if (existing.length === 0 && typeof indexedDB !== 'undefined' && indexedDB.databases) {
+      const dbs = await indexedDB.databases();
+      if (dbs.some(d => d.name === 'personas-studio')) {
+        const oldDb = await openDB('personas-studio', 1);
+        const oldProjects = await oldDb.getAll('projects');
+        for (const p of oldProjects) await database.put('projects', p);
+        const oldSettings = await oldDb.get('settings', 'providers');
+        if (oldSettings) await database.put('settings', oldSettings, 'providers');
+        oldDb.close();
+      }
+    }
+  } catch {}
+  return database;
+}
+const db = initDb();
 export async function loadProjects() { return (await db).getAll('projects'); }
 export async function saveProject(project) { return (await db).put('projects', project); }
 export async function deleteProject(id) { return (await db).delete('projects', id); }

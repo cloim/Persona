@@ -1,4 +1,4 @@
-# Personas Studio
+# Persona Studio
 
 캐릭터 LoRA 학습 이미지셋을 구성하는 로컬 우선 React PWA입니다. 권장 구도 설계, 이미지 등록과 AI 생성, 캡션 검토, Modal CLI 클라우드 원클릭 자동 학습을 한 흐름으로 준비합니다.
 
@@ -26,7 +26,7 @@ npm start
 
 ## Tailscale 원격 접속
 
-프로젝트 루트의 `.env`에 `PERSONAS_ALLOWED_ORIGINS=https://workstation.example.com:8462`처럼 실제 Tailscale HTTPS origin을 지정한 뒤 서버를 재시작합니다. `.env`는 Git에서 제외됩니다. `tailscale serve --bg --https=8462 http://127.0.0.1:4317`로 전용 HTTPS 포트를 연결하면 Tailscale이 켜진 같은 네트워크의 기기에서 접근할 수 있습니다. 기존 Serve 포트와 겹치지 않는 번호를 사용하세요.
+프로젝트 루트의 `.env`에 `PERSONA_ALLOWED_ORIGINS=https://workstation.example.com:8462`처럼 실제 Tailscale HTTPS origin을 지정한 뒤 서버를 재시작합니다. `.env`는 Git에서 제외됩니다. `tailscale serve --bg --https=8462 http://127.0.0.1:4317`로 전용 HTTPS 포트를 연결하면 Tailscale이 켜진 같은 네트워크의 기기에서 접근할 수 있습니다. 기존 Serve 포트와 겹치지 않는 번호를 사용하세요.
 
 브라우저 데이터는 기기와 주소별로 저장되므로 기존 프로젝트를 옮기려면 프로젝트 백업과 가져오기를 사용합니다. 원격 기기에서도 ComfyUI와 Codex는 작업실 서버 PC의 연결을 사용합니다.
 
@@ -74,6 +74,7 @@ ChatGPT 로그인을 완료하고 앱에서 연결 확인을 실행합니다. �
 
 학습 실행 대상은 **Modal Cloud (NVIDIA A10G 24GB VRAM, 32GB RAM)** 환경입니다.
 웹 앱의 **학습과 내보내기** 페이지에서 **[Modal에서 자동 학습 시작]** 버튼을 누르면:
+
 1. 브라우저의 이미지셋과 캡션이 로컬 백엔드를 통해 Modal 원격 컨테이너로 자동 전송됩니다.
 2. Modal A10G GPU 인스턴스가 즉시 프로비저닝되어 AI Toolkit 고속 학습을 시작합니다.
 3. 앱 화면에서 현재 스텝(Step X/1000), 실시간 Loss 수치, 콘솔 로그를 라이브로 확인할 수 있습니다.
@@ -84,7 +85,7 @@ ChatGPT 로그인을 완료하고 앱에서 연결 확인을 실행합니다. �
 터미널에서 직접 실행할 수도 있습니다:
 
 ```powershell
-modal run scripts/modal_train.py --dataset-dir ./dataset_omz --trigger omz --model krea2 --steps 1000 --rank 8
+modal run scripts/modal_train.py --dataset-dir ./dataset_abc --trigger abc --model krea2 --steps 1000 --rank 8
 ```
 
 필요한 경우 **학습 데이터셋 ZIP 다운로드**로 `train.yaml`, 이미지, TXT 캡션이 포함된 압축 패키지를 받아 로컬 AI Toolkit에서 직접 학습할 수도 있습니다.
@@ -93,7 +94,7 @@ modal run scripts/modal_train.py --dataset-dir ./dataset_omz --trigger omz --mod
 
 서버의 `.env`에 `GOOGLE_CLIENT_ID`와 `GOOGLE_CLIENT_SECRET`을 설정합니다. Google Auth Platform에서 웹 애플리케이션 OAuth 클라이언트를 만들고 실제 Tailscale HTTPS 주소와 `http://localhost:4317`을 승인된 JavaScript 원본으로, 각 주소 뒤에 `/api/google/callback`을 붙인 주소를 승인된 리디렉션 URI로 등록합니다. Drive API를 사용 설정하고 테스트 모드에서는 사용할 Google 계정을 테스트 사용자로 추가합니다. 로그인 범위는 `openid`, `email`, `profile`, `drive.file`입니다. 전체 Drive 접근 권한을 요청하지 않습니다.
 
-앱의 **Google Drive 보관함**에서 로그인한 후 검토 완료 프로젝트를 저장합니다. 내 Drive의 `Personas Studio` 아래 새로운 폴더에 `dataset.zip`을 안전하게 백업합니다. 업로드는 8MB 조각으로 전송하며 중단해도 로컬 프로젝트는 유지합니다.
+앱의 **Google Drive 보관함**에서 로그인한 후 검토 완료 프로젝트를 저장합니다. 내 Drive의 `Persona Studio` 아래 새로운 폴더에 `dataset.zip`을 안전하게 백업합니다. 업로드는 8MB 조각으로 전송하며 중단해도 로컬 프로젝트는 유지합니다.
 
 **Drive 프로젝트 불러오기 → 저장한 프로젝트 찾기**에서 이 앱이 저장한 폴더를 선택하고 새 프로젝트 사본으로 복원합니다. 이미지, TXT 캡션과 검토 상태, 구도 및 학습 설정을 가져오며 현재 프로젝트는 보관합니다. 새 패키지는 캐릭터 설명, 스타일과 참조 이미지도 포함합니다. 이전 버전의 패키지는 이미지와 캡션을 복원하고 저장 당시 포함되지 않았던 캐릭터 설명과 참조 이미지를 보완하도록 안내합니다. 저장 항목은 최근 순으로 50개씩 조회하며 ZIP 다운로드와 복원을 중단할 수 있습니다. 로그인한 계정의 앱 생성 파일만 조회하며 전체 Drive 접근 권한을 추가하지 않습니다. 파일 수, 압축 해제 크기와 경로, 이미지 및 캡션 짝을 검사한 뒤 브라우저에 저장합니다.
 

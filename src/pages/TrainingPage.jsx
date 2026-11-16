@@ -143,8 +143,14 @@ export default function TrainingPage({ project, updateProject, notify, openShot 
     }
   }
 
-  // CLI 명령어 복사
-  const cliCommand = `modal run scripts/modal_train.py --dataset-dir ./dataset_omz --trigger ${safeName(project.trigger)} --model ${project.model} --steps ${t.steps || 1000} --rank ${t.rank || 8}`;
+  // CLI 명령어 복사 (캐릭터 트리거 및 선택 모델에 맞게 동적 생성)
+  const charaName = safeName(project.trigger || project.name || 'character');
+  const isKrea2 = project.model === 'krea2';
+  const scriptFile = isKrea2 ? 'scripts/modal_train_krea2.py' : 'scripts/modal_train.py';
+  const epochs = Math.max(1, Math.round((t.steps || 2304) / (progress.filled || 36)));
+  const cliCommand = isKrea2
+    ? `modal run ${scriptFile} --name ${charaName} --dataset-dir ./dataset_${charaName} --trigger-word "${project.trigger}" --epochs ${epochs} --rank ${t.rank || 32}`
+    : `modal run ${scriptFile} --dataset-dir ./dataset_${charaName} --trigger "${project.trigger}" --model ${project.model} --steps ${t.steps || 1000} --rank ${t.rank || 8}`;
   async function copyCliCommand() {
     try {
       await navigator.clipboard.writeText(cliCommand);
