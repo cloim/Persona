@@ -143,12 +143,12 @@ function App() {
     catch (error) { notify(error.message, true); }
     finally { backupInput.current.value = ''; }
   }
-  if (!loaded) return <div className="boot"><div className="brand-mark">p<span>•</span></div><h1>Persona</h1><p>{loadError || '캐릭터 작업실을 준비하고 있어요'}</p>{loadError && <Button onClick={() => location.reload()}>새로고침</Button>}</div>;
+  if (!loaded) return <div className="boot"><div className="brand-mark"><img src="/logo-white.svg" alt="Persona"/></div><h1>Persona</h1><p>{loadError || '캐릭터 작업실을 준비하고 있어요'}</p>{loadError && <Button onClick={() => location.reload()}>새로고침</Button>}</div>;
   const ready = readiness(project); const current = pages[location.pathname] || pages['/dataset'];
   return <div className="app-shell">
     {mobileNav && <div className="nav-scrim" onClick={() => setMobileNav(false)}/>}
     <aside className={`sidebar ${mobileNav ? 'mobile-open' : ''}`}>
-      <NavLink to="/dataset" className="brand"><div className="brand-mark">p<span>•</span></div><div>persona<span>캐릭터가 시작되는 곳</span></div></NavLink>
+      <NavLink to="/dataset" className="brand"><div className="brand-mark"><img src="/logo-white.svg" alt="Persona"/></div><div>persona<span>캐릭터가 시작되는 곳</span></div></NavLink>
       <button className="project-switcher" onClick={() => setShowProjects(true)}><div className="small-avatar">{project.reference ? <img src={project.reference.data} alt=""/> : <Leaf size={18}/>}</div><span><small>내 프로젝트</small><strong>{project.name}</strong></span><MoreHorizontal size={17}/></button>
       <div className="nav-heading">작업 공간</div>
       <nav>{navItems.map(({ to, label, icon: Icon }, index) => <NavLink key={to} to={to} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}><Icon size={19}/><span>{label}</span>{index === 0 && <span className="nav-count">{project.size}</span>}</NavLink>)}</nav>
