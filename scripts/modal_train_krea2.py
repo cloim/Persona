@@ -29,6 +29,7 @@ import modal
 
 app = modal.App("persona-krea2-training")
 output_volume = modal.Volume.from_name("persona-output", create_if_missing=True)
+model_cache_volume = modal.Volume.from_name("persona-model-cache", create_if_missing=True)
 
 # 기본 학습 이미지 환경 (AI-Toolkit 및 런타임 의존성 사전 구성)
 training_image = (
@@ -53,7 +54,10 @@ training_image = (
     gpu="A10G",
     memory=32768,
     timeout=7200,
-    volumes={"/root/output": output_volume},
+    volumes={
+        "/root/output": output_volume,
+        "/root/.cache/huggingface": model_cache_volume,
+    },
     secrets=[modal.Secret.from_name("huggingface")],
 )
 def train_krea2_remote(
@@ -261,6 +265,11 @@ def train_krea2_remote(
         process.terminate()
         process.wait(timeout=30)
         raise
+    finally:
+        try:
+            model_cache_volume.commit()
+        except Exception:
+            pass
 
     assert ret == 0, f"학습 실패 (종료 코드: {ret})"
 
@@ -344,12 +353,30 @@ def main(
 
     print(f"\n원격 학습이 완료되었습니다! (결과: {result})")
 
-    # 4. 로컬 자동 다운로드 안내
+    # 4. 로컬/컨테이너 output 디렉터리로 자동 다운로드
     out_name = f"{name}_krea2"
+    lora_filename = f"{out_name}.safetensors"
+    default_lora_dir = "/comfy-data/models/loras" if os.path.exists("/comfy-data/models/loras") else "output"
+    target_dir = Path(os.environ.get("LORA_DIR", default_lora_dir))
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file = target_dir / lora_filename
+
+    print(f"\n[로컬 동기화] Modal Volume에서 결과 LoRA 다운로드 시도: {target_file}...", flush=True)
+    try:
+        r = subprocess.run(
+            ["modal", "volume", "get", "persona-output", f"{out_name}/{lora_filename}", str(target_file)],
+            shell=True if sys.platform == "win32" else False,
+            capture_output=True,
+            text=True,
+            timeout=180
+        )
+        if r.returncode == 0 and target_file.exists():
+            print(f"[로컬 동기화 성공] {target_file} ({target_file.stat().st_size / 1024 / 1024:.1f} MB)", flush=True)
+        else:
+            print(f"[로컬 동기화 안내] 다운로드 명령어: modal volume get persona-output {out_name}/{lora_filename} {target_file}", flush=True)
+    except Exception as e:
+        print(f"[로컬 동기화 안내] {e}", flush=True)
+
     print(f"\n[Modal Volume 저장 위치]")
     print(f"  Volume: persona-output")
     print(f"  Path: {out_name}/{out_name}.safetensors")
-    print(f"\n[로컬 다운로드 명령어]")
-    print(f"  modal volume get persona-output {out_name}/{out_name}.safetensors D:/PROJECTS/Persona/output/{out_name}/{out_name}.safetensors")
-    print(f"\n[ComfyMUI 도커 컨테이너 복사 명령어]")
-    print(f"  docker cp \"D:/PROJECTS/Persona/output/{out_name}/{out_name}.safetensors\" \"comfymui-comfyui:/data/models/loras/Krea2/{out_name}.safetensors\"")

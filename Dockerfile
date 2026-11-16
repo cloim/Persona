@@ -21,9 +21,15 @@ ENV NODE_ENV=production \
     PORT=8190 \
     HOST=0.0.0.0
 
-# Install curl for container healthcheck and ca-certificates
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+# Install curl for container healthcheck, ca-certificates, python3, and modal CLI
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    python3 \
+    python3-pip \
+    python-is-python3 \
     && npm install -g @openai/codex \
+    && pip install --no-cache-dir --break-system-packages modal \
     && rm -rf /var/lib/apt/lists/*
 
 # Install production dependencies only
@@ -33,8 +39,9 @@ RUN npm ci --omit=dev
 # Copy built frontend assets from builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy backend server files
+# Copy backend server and script files
 COPY server ./server
+COPY scripts ./scripts
 
 RUN mkdir -p /tmp/codex /data
 
