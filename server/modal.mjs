@@ -2,16 +2,20 @@ import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, readdirSync, statSync, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { deployLora, rescanLoraManager } from './deploy.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const defaultLoraDir = existsSync('/comfy-data/models/loras') ? '/comfy-data/models/loras' : path.join(root, 'output');
 const outputDir = process.env.LORA_DIR || defaultLoraDir;
+const loraViewDir = process.env.LORA_VIEW_DIR || '/data/models-view/loras';
 const tempDir = process.env.TEMP_TRAIN_DIR || (existsSync('/data') ? '/data/modal_train' : path.join(root, '.cache', 'modal_train'));
 
 if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
 if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true });
 
 let activeJob = null;
+// 학습을 시작한 프로젝트의 배포용 정보(참조 이미지 포함). 상태 응답에는 포함하지 않는다
+let activeDeployProject = null;
 let externalJobCache = { time: 0, data: null };
 
 function detectRunningExternalModalApp() {
@@ -84,6 +88,27 @@ function detectRunningExternalModalApp() {
   } catch {
     return null;
   }
+}
+
+export async function deployTrainedLora(file, project) {
+  const result = await deployLora({ loraDir: outputDir, viewDir: loraViewDir, file, project });
+  result.rescanned = await rescanLoraManager(process.env.COMFY_URL, result.metadata);
+  return result;
+}
+
+// 학습 완료 직후 결과 파일을 모델 폴더로 옮기고 미리보기와 메타데이터를 채운다
+function autoDeploy(job) {
+  if (!job.outputFile || job.deployed || !activeDeployProject || !job.outputFile.startsWith(job.trigger)) return;
+  job.deployed = { pending: true };
+  deployTrainedLora(job.outputFile, activeDeployProject)
+    .then(result => {
+      job.deployed = { folder: result.folder, preview: result.preview, previewHash: result.previewHash, at: Date.now() };
+      job.logs.push(`[시스템] ComfyUI 배포 완료: loras/${result.folder}/${result.file}${result.preview ? ' · 예시 이미지 등록' : ''}`);
+    })
+    .catch(err => {
+      job.deployed = null;
+      job.logs.push(`[경고] ComfyUI 배포 중 오류: ${err.message}`);
+    });
 }
 
 export function checkModalCli() {
@@ -177,6 +202,7 @@ export function getModalTrainingJob(trigger) {
         } catch {}
       }
     }
+    if (activeJob.status === 'completed') autoDeploy(activeJob);
     const { process: _proc, ...info } = activeJob;
     return info;
   }
@@ -338,6 +364,7 @@ export async function startModalTraining({ project, slots }) {
   };
 
   activeJob = job;
+  activeDeployProject = { name: project.name, trigger: project.trigger, model: modelId, identity: project.identity, reference: project.reference, training: { steps, rank } };
 
   const child = spawn('modal', args, {
     shell: true,
@@ -409,6 +436,7 @@ export async function startModalTraining({ project, slots }) {
           job.outputFile = matched.name;
           job.outputSize = matched.size;
           job.logs.push(`[시스템] 결과 파일: ${matched.name} (${(matched.size / 1024 / 1024).toFixed(1)} MB)`);
+          autoDeploy(job);
         }
 
         try {

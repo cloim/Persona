@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Copy, Download, FolderOpen, LogIn, PackageOpen, UploadCloud } from 'lucide-react';
+import { ArrowRight, Copy, Download, FolderOpen, LogIn, PackageOpen, RefreshCw, UploadCloud } from 'lucide-react';
 import { Button, Empty } from '../components/ui';
 import { readiness } from '../lib/dataset.mjs';
 import { uploadTrainingPackage } from '../lib/drive.mjs';
@@ -14,7 +14,9 @@ export default function DeployPage({ project, updateProject, google, notify }) {
   const [controller, setController] = useState(null);
   const [busyExport, setBusyExport] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
+  const [deploying, setDeploying] = useState(false);
   const active = useRef(null);
+  const deployAttempt = useRef('');
   const progress = readiness(project);
   const lora = project.lora;
   const last = project.cloudPackage;
@@ -41,6 +43,30 @@ export default function DeployPage({ project, updateProject, google, notify }) {
         .catch(() => {});
     }
   }, [project?.lora?.file, project?.trigger, updateProject]);
+  // LoRA를 ComfyUI 모델 폴더로 옮기고 프로젝트 기본 이미지와 메타데이터를 채운다
+  async function deployToComfy(manual = false) {
+    if (!lora?.file) return;
+    setDeploying(true);
+    try {
+      const { slots: _omitted, ...meta } = project;
+      const result = await api('/api/train/deploy', { file: lora.file, project: { ...meta, model: lora.model || project.model } });
+      updateProject({ lora: { ...lora, deployed: { folder: result.folder, preview: result.preview, previewHash: result.previewHash, at: Date.now() } } });
+      if (manual) notify(`ComfyUI loras/${result.folder} 폴더에 배포했어요`);
+    } catch (error) {
+      if (manual) notify(error.message, true);
+    } finally {
+      setDeploying(false);
+    }
+  }
+  const referenceHash = project.reference?.hash || null;
+  useEffect(() => {
+    if (!lora?.file) return;
+    if (lora.deployed && lora.deployed.previewHash === referenceHash) return;
+    const key = `${project.id}:${lora.file}:${referenceHash}`;
+    if (deployAttempt.current === key) return;
+    deployAttempt.current = key;
+    deployToComfy();
+  }, [project.id, lora?.file, lora?.deployed?.previewHash, referenceHash]);
   useEffect(() => {
     const warn = e => { if (upload) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('beforeunload', warn);
@@ -95,9 +121,11 @@ export default function DeployPage({ project, updateProject, google, notify }) {
           {lora.size ? <div><dt>크기</dt><dd>{(lora.size / 1024 / 1024).toFixed(1)} MB</dd></div> : null}
           <div><dt>완료 시각</dt><dd>{new Date(lora.completedAt).toLocaleString('ko-KR')}</dd></div>
           {modelLabel ? <div><dt>베이스 모델</dt><dd>{modelLabel}</dd></div> : null}
+          <div><dt>ComfyUI 배포</dt><dd>{lora.deployed ? `loras/${lora.deployed.folder}${lora.deployed.preview ? ' · 예시 이미지 등록' : ''}` : deploying ? '배포 중' : '배포 대기'}</dd></div>
         </dl>
         <div className="inline-actions">
           <a className="button primary" href={`/api/train/output/${encodeURIComponent(lora.file)}`} download={lora.file}><Download size={16}/>LoRA 다운로드</a>
+          <Button icon={RefreshCw} busy={deploying} onClick={() => deployToComfy(true)}>ComfyUI에 다시 배포</Button>
         </div>
       </> : <Empty icon={PackageOpen} title="학습을 완료하면 LoRA 파일이 여기에 준비돼요"><Link className="button" to="/training">학습으로<ArrowRight size={16}/></Link></Empty>}
     </section>
@@ -105,7 +133,7 @@ export default function DeployPage({ project, updateProject, google, notify }) {
     <section className="card">
       <h2 className="card-title">ComfyUI에서 사용</h2>
       <ol className="step-list">
-        <li>내려받은 <code>.safetensors</code> 파일을 <code>ComfyUI/models/loras</code>에 복사해요</li>
+        <li>학습이 끝나면 <code>.safetensors</code> 파일을 <code>ComfyUI/models/loras/{lora?.deployed?.folder || '모델 폴더'}</code>에 자동으로 넣고 프로젝트 기본 이미지와 메타데이터를 함께 등록해요</li>
         <li><code>LoraLoader</code> 노드에서 파일을 선택해요 · 강도는 0.8~1.0부터 시작해요</li>
         <li>프롬프트의 첫 단어로 트리거를 사용해요</li>
       </ol>

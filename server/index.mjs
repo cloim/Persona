@@ -7,7 +7,7 @@ import { allowedAccess } from './access.mjs';
 import { compatibleGenerate, comfyGenerate, codexGenerate, testProvider, codexStartDeviceAuth, codexGetDeviceAuthStatus } from './providers.mjs';
 import { captionImage } from './captions.mjs';
 import { googleRouter } from './google.mjs';
-import { checkModalCli, getModalTrainingJob, cancelModalTraining, startModalTraining, getOutputFileStream } from './modal.mjs';
+import { checkModalCli, getModalTrainingJob, cancelModalTraining, startModalTraining, getOutputFileStream, deployTrainedLora } from './modal.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (existsSync(path.join(root, '.env'))) process.loadEnvFile(path.join(root, '.env'));
@@ -76,6 +76,14 @@ app.post('/api/train/start', async (req, res) => {
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
 app.post('/api/train/cancel', (req, res) => { res.json(cancelModalTraining()); });
+app.post('/api/train/deploy', async (req, res) => {
+  try {
+    const { file, project } = req.body || {};
+    if (!project || typeof project !== 'object') return res.status(400).json({ error: '프로젝트 정보가 필요합니다.' });
+    const { metadata, path: _path, ...result } = await deployTrainedLora(file, project);
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 app.get('/api/train/output/:filename', (req, res) => {
   const file = getOutputFileStream(req.params.filename);
   if (!file) return res.status(404).json({ error: '파일을 찾을 수 없습니다.' });
